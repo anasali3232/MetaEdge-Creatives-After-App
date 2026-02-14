@@ -87,6 +87,27 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Auto-migrate: add any missing columns before Drizzle queries run
+  try {
+    const mysql = await import("mysql2/promise");
+    const migrationPool = mysql.createPool(process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL!);
+    const migrations = [
+      "ALTER TABLE employees ADD COLUMN IF NOT EXISTS description TEXT",
+      "ALTER TABLE monthly_reports ADD COLUMN IF NOT EXISTS pdf_url TEXT",
+    ];
+    for (const query of migrations) {
+      try { await migrationPool.query(query); } catch (e: any) {
+        if (e.code !== 'ER_DUP_FIELDNAME' && !e.message?.includes('Duplicate column')) {
+          console.log("Migration notice:", e.message);
+        }
+      }
+    }
+    await migrationPool.end();
+    log("Database columns verified", "migration");
+  } catch (e: any) {
+    console.log("Migration check skipped:", e.message);
+  }
+
   await storage.seedSuperAdmin();
   await storage.seedDefaultPages();
   await registerRoutes(httpServer, app);
