@@ -26,6 +26,7 @@ import {
   MonitorOff,
   ArrowUp,
   ArrowDown,
+  Coffee,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -137,6 +138,10 @@ export default function TeamPortalDashboard() {
   const [perfData, setPerfData] = useState<PerformanceData | null>(null);
   const [empPerformance, setEmpPerformance] = useState<EmployeePerformance[]>([]);
   const [screenshotEnabled, setScreenshotEnabled] = useState(false);
+  const [onBreak, setOnBreak] = useState(false);
+  const [breakElapsed, setBreakElapsed] = useState(0);
+  const breakStartRef = useRef<number | null>(null);
+  const breakTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [heartbeats, setHeartbeats] = useState<HeartbeatData[]>([]);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -200,7 +205,7 @@ export default function TeamPortalDashboard() {
       intervalRef.current = null;
     }
 
-    if (dashData?.clockedIn && dashData.clockEntry?.clockIn) {
+    if (dashData?.clockedIn && dashData.clockEntry?.clockIn && !onBreak) {
       const updateElapsed = () => {
         const start = new Date(dashData.clockEntry.clockIn).getTime();
         const now = Date.now();
@@ -208,7 +213,7 @@ export default function TeamPortalDashboard() {
       };
       updateElapsed();
       intervalRef.current = setInterval(updateElapsed, 1000);
-    } else {
+    } else if (!dashData?.clockedIn) {
       setElapsed(0);
     }
 
@@ -218,10 +223,16 @@ export default function TeamPortalDashboard() {
         intervalRef.current = null;
       }
     };
-  }, [dashData?.clockedIn, dashData?.clockEntry]);
+  }, [dashData?.clockedIn, dashData?.clockEntry, onBreak]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || onBreak) {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      return;
+    }
 
     const sendHeartbeat = () => {
       try {
@@ -245,7 +256,7 @@ export default function TeamPortalDashboard() {
         heartbeatIntervalRef.current = null;
       }
     };
-  }, [token]);
+  }, [token, onBreak]);
 
   useEffect(() => {
     if (!token || !screenshotEnabled) {
@@ -341,12 +352,61 @@ export default function TeamPortalDashboard() {
         const data = await res.json().catch(() => ({}));
         console.error("Clock error:", data.error || res.statusText);
       }
+      if (action === "in") {
+        setScreenshotEnabled(true);
+        setOnBreak(false);
+        setBreakElapsed(0);
+        breakStartRef.current = null;
+      }
+      if (action === "out") {
+        setScreenshotEnabled(false);
+        setOnBreak(false);
+        setBreakElapsed(0);
+        breakStartRef.current = null;
+        if (breakTimerRef.current) {
+          clearInterval(breakTimerRef.current);
+          breakTimerRef.current = null;
+        }
+      }
       fetchDashboard();
       fetchPerformance();
     } catch (err) {
       console.error("Clock request failed:", err);
     }
     setClockLoading(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (breakTimerRef.current) {
+        clearInterval(breakTimerRef.current);
+        breakTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleTakeBreak = () => {
+    setOnBreak(true);
+    setScreenshotEnabled(false);
+    breakStartRef.current = Date.now();
+    setBreakElapsed(0);
+    if (breakTimerRef.current) clearInterval(breakTimerRef.current);
+    breakTimerRef.current = setInterval(() => {
+      if (breakStartRef.current) {
+        setBreakElapsed(Math.floor((Date.now() - breakStartRef.current) / 1000));
+      }
+    }, 1000);
+  };
+
+  const handleResumeWork = () => {
+    setOnBreak(false);
+    setScreenshotEnabled(true);
+    breakStartRef.current = null;
+    setBreakElapsed(0);
+    if (breakTimerRef.current) {
+      clearInterval(breakTimerRef.current);
+      breakTimerRef.current = null;
+    }
   };
 
   const getEmployeeActivityStatus = (employeeId: string): "active" | "inactive" | "unknown" => {
@@ -447,23 +507,29 @@ export default function TeamPortalDashboard() {
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">Dashboard</h2>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                data-testid="button-toggle-screenshot"
-                onClick={() => setScreenshotEnabled(!screenshotEnabled)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-                  screenshotEnabled
-                    ? "bg-green-50 text-green-700 border border-green-200"
-                    : "bg-gray-50 text-gray-500 border border-gray-200"
-                }`}
-                title={screenshotEnabled ? "Screen sharing enabled" : "Enable screen sharing"}
-              >
-                {screenshotEnabled ? (
-                  <Monitor className="w-3.5 h-3.5" />
-                ) : (
-                  <MonitorOff className="w-3.5 h-3.5" />
-                )}
-                <span className="hidden sm:inline">{screenshotEnabled ? "Sharing" : "Share Screen"}</span>
-              </button>
+              {dashData?.clockedIn && (
+                <div
+                  data-testid="status-screen-sharing"
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${
+                    onBreak
+                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                      : screenshotEnabled
+                        ? "bg-green-50 text-green-700 border border-green-200"
+                        : "bg-gray-50 text-gray-500 border border-gray-200"
+                  }`}
+                >
+                  {onBreak ? (
+                    <MonitorOff className="w-3.5 h-3.5" />
+                  ) : screenshotEnabled ? (
+                    <Monitor className="w-3.5 h-3.5" />
+                  ) : (
+                    <MonitorOff className="w-3.5 h-3.5" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {onBreak ? "On Break" : screenshotEnabled ? "Sharing" : "Starting..."}
+                  </span>
+                </div>
+              )}
               <span className="text-sm text-gray-600 hidden sm:block">{user.name}</span>
               {user.avatarUrl ? (
                 <img
@@ -544,10 +610,12 @@ export default function TeamPortalDashboard() {
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className={`text-lg font-bold ${dashData?.clockedIn ? "text-green-600" : "text-gray-400"}`}>
-                        {dashData?.clockedIn ? "Clocked In" : "Clocked Out"}
+                      <p className={`text-lg font-bold ${
+                        onBreak ? "text-amber-600" : dashData?.clockedIn ? "text-green-600" : "text-gray-400"
+                      }`}>
+                        {onBreak ? "On Break" : dashData?.clockedIn ? "Clocked In" : "Clocked Out"}
                       </p>
-                      {dashData?.clockedIn && (
+                      {dashData?.clockedIn && !onBreak && (
                         <div className="flex items-center gap-1.5 mt-1">
                           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                           <span className="font-mono text-xl font-bold text-gray-900">
@@ -555,31 +623,66 @@ export default function TeamPortalDashboard() {
                           </span>
                         </div>
                       )}
-                    </div>
-                    <Button
-                      size="sm"
-                      disabled={clockLoading}
-                      onClick={() => handleClock(dashData?.clockedIn ? "out" : "in")}
-                      className={
-                        dashData?.clockedIn
-                          ? "bg-red-600 hover:bg-red-700 text-white"
-                          : "bg-[#C41E3A] hover:bg-[#A3182F] text-white"
-                      }
-                    >
-                      {clockLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : dashData?.clockedIn ? (
-                        <>
-                          <Square className="w-3 h-3 mr-1" />
-                          Clock Out
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3 mr-1" />
-                          Clock In
-                        </>
+                      {onBreak && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                          <span className="font-mono text-sm text-amber-700">
+                            Break: {formatElapsed(breakElapsed)}
+                          </span>
+                        </div>
                       )}
-                    </Button>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {dashData?.clockedIn && !onBreak && (
+                        <Button
+                          size="sm"
+                          disabled={clockLoading}
+                          onClick={handleTakeBreak}
+                          data-testid="button-take-break"
+                          className="bg-amber-500 hover:bg-amber-600 text-white"
+                        >
+                          <Coffee className="w-3 h-3 mr-1" />
+                          Take a Break
+                        </Button>
+                      )}
+                      {onBreak && (
+                        <Button
+                          size="sm"
+                          disabled={clockLoading}
+                          onClick={handleResumeWork}
+                          data-testid="button-resume-work"
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          <Play className="w-3 h-3 mr-1" />
+                          Resume Work
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        disabled={clockLoading}
+                        onClick={() => handleClock(dashData?.clockedIn ? "out" : "in")}
+                        data-testid="button-clock-toggle"
+                        className={
+                          dashData?.clockedIn
+                            ? "bg-red-600 hover:bg-red-700 text-white"
+                            : "bg-[#C41E3A] hover:bg-[#A3182F] text-white"
+                        }
+                      >
+                        {clockLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : dashData?.clockedIn ? (
+                          <>
+                            <Square className="w-3 h-3 mr-1" />
+                            Clock Out
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 mr-1" />
+                            Clock In
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

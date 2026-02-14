@@ -38,7 +38,9 @@ A separate `team-portal` system with its own JWT-based authentication (5-minute 
 - **Activity Heartbeats**: Employees send heartbeat pings every 2 minutes to track active status. Admin dashboard shows real-time active/inactive indicators.
 - **Screenshot Capture**: Browser-based screen capture every 10 minutes (requires user permission via Screen Capture API). Screenshots stored in database as base64 JPEG. Admin-only screenshot viewer page.
 - **Inactive Employee Indicator**: Dark red ring around employee avatars when inactive 10+ minutes (based on heartbeat data). Green ring when active.
-- **Weekly Reports**: Employees submit weekly reports (accomplishments, challenges, next week plan) by team. Team members can view their team's reports; admins see all.
+- **Weekly Reports**: Employees submit weekly reports (accomplishments, challenges, next week plan) by team with optional PDF attachment. Week-by-week filter for easy navigation. Team members can view their team's reports; admins see all.
+- **Auto Screen Sharing**: Screen sharing starts automatically on Clock In and stops on Clock Out (no separate toggle). Integrated into both Dashboard and Timesheet pages.
+- **Break System**: "Take a Break" button pauses the work timer, stops screenshots/heartbeats, and shows break duration. "Resume Work" restarts tracking and screen sharing.
 - **Monthly Reports**: Similar to weekly but with monthly summary, achievements, goals for next month, hours/tasks stats.
 - **Performance Graphs**: Weekly activity bar chart with trend comparison vs last week (arrow up/down with percentage).
 

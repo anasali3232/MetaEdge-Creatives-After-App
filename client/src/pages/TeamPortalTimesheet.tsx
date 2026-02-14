@@ -21,6 +21,9 @@ import {
   FileText,
   Camera,
   BarChart3,
+  Coffee,
+  Monitor,
+  MonitorOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,6 +129,13 @@ export default function TeamPortalTimesheet() {
   const [clockNotes, setClockNotes] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [onBreak, setOnBreak] = useState(false);
+  const [breakElapsed, setBreakElapsed] = useState(0);
+  const breakStartRef = useRef<number | null>(null);
+  const breakTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [screenshotEnabled, setScreenshotEnabled] = useState(false);
+  const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [entries, setEntries] = useState<ClockEntry[]>([]);
@@ -203,7 +213,7 @@ export default function TeamPortalTimesheet() {
       intervalRef.current = null;
     }
 
-    if (clockStatus?.clockedIn && clockStatus.clockEntry?.clockIn) {
+    if (clockStatus?.clockedIn && clockStatus.clockEntry?.clockIn && !onBreak) {
       const updateElapsed = () => {
         const start = new Date(clockStatus.clockEntry!.clockIn).getTime();
         const now = Date.now();
@@ -211,7 +221,7 @@ export default function TeamPortalTimesheet() {
       };
       updateElapsed();
       intervalRef.current = setInterval(updateElapsed, 1000);
-    } else {
+    } else if (!clockStatus?.clockedIn) {
       setElapsed(0);
     }
 
@@ -221,7 +231,61 @@ export default function TeamPortalTimesheet() {
         intervalRef.current = null;
       }
     };
-  }, [clockStatus]);
+  }, [clockStatus, onBreak]);
+
+  useEffect(() => {
+    if (!token || !screenshotEnabled) {
+      if (screenshotIntervalRef.current) {
+        clearInterval(screenshotIntervalRef.current);
+        screenshotIntervalRef.current = null;
+      }
+      if (!screenshotEnabled && mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      return;
+    }
+
+    const captureAndUpload = async () => {
+      try {
+        let stream = mediaStreamRef.current;
+        if (!stream || !stream.active) {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          mediaStreamRef.current = stream;
+        }
+        const track = stream.getVideoTracks()[0];
+        if (!track) return;
+        const imageCapture = new (window as any).ImageCapture(track);
+        const bitmap = await imageCapture.grabFrame();
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(bitmap, 0, 0);
+        const base64String = canvas.toDataURL("image/jpeg", 0.7);
+        await fetch("/api/team-portal/screenshots", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ imageData: base64String }),
+        }).catch(() => {});
+      } catch {}
+    };
+
+    captureAndUpload();
+    screenshotIntervalRef.current = setInterval(captureAndUpload, 10 * 60 * 1000);
+
+    return () => {
+      if (screenshotIntervalRef.current) {
+        clearInterval(screenshotIntervalRef.current);
+        screenshotIntervalRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, [token, screenshotEnabled]);
 
   const handleClockIn = async () => {
     if (!token) return;
@@ -236,6 +300,10 @@ export default function TeamPortalTimesheet() {
         body: JSON.stringify({ notes: clockNotes || undefined }),
       });
       setClockNotes("");
+      setScreenshotEnabled(true);
+      setOnBreak(false);
+      setBreakElapsed(0);
+      breakStartRef.current = null;
       fetchClockStatus();
       fetchEntries();
     } catch {}
@@ -250,10 +318,51 @@ export default function TeamPortalTimesheet() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      setScreenshotEnabled(false);
+      setOnBreak(false);
+      setBreakElapsed(0);
+      breakStartRef.current = null;
+      if (breakTimerRef.current) {
+        clearInterval(breakTimerRef.current);
+        breakTimerRef.current = null;
+      }
       fetchClockStatus();
       fetchEntries();
     } catch {}
     setClockLoading(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (breakTimerRef.current) {
+        clearInterval(breakTimerRef.current);
+        breakTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleTakeBreak = () => {
+    setOnBreak(true);
+    setScreenshotEnabled(false);
+    breakStartRef.current = Date.now();
+    setBreakElapsed(0);
+    if (breakTimerRef.current) clearInterval(breakTimerRef.current);
+    breakTimerRef.current = setInterval(() => {
+      if (breakStartRef.current) {
+        setBreakElapsed(Math.floor((Date.now() - breakStartRef.current) / 1000));
+      }
+    }, 1000);
+  };
+
+  const handleResumeWork = () => {
+    setOnBreak(false);
+    setScreenshotEnabled(true);
+    breakStartRef.current = null;
+    setBreakElapsed(0);
+    if (breakTimerRef.current) {
+      clearInterval(breakTimerRef.current);
+      breakTimerRef.current = null;
+    }
   };
 
   const prevWeek = () => {
@@ -429,9 +538,31 @@ export default function TeamPortalTimesheet() {
           >
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-                  <Timer className="w-4 h-4 text-[#C41E3A]" />
-                  Clock In / Out
+                <CardTitle className="text-sm font-medium text-gray-500 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Timer className="w-4 h-4 text-[#C41E3A]" />
+                    Clock In / Out
+                  </div>
+                  {clockStatus?.clockedIn && (
+                    <div
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${
+                        onBreak
+                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                          : screenshotEnabled
+                            ? "bg-green-50 text-green-700 border border-green-200"
+                            : "bg-gray-50 text-gray-500 border border-gray-200"
+                      }`}
+                    >
+                      {onBreak ? (
+                        <MonitorOff className="w-3.5 h-3.5" />
+                      ) : screenshotEnabled ? (
+                        <Monitor className="w-3.5 h-3.5" />
+                      ) : (
+                        <MonitorOff className="w-3.5 h-3.5" />
+                      )}
+                      {onBreak ? "On Break" : screenshotEnabled ? "Screen Sharing" : "Starting..."}
+                    </div>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -440,22 +571,30 @@ export default function TeamPortalTimesheet() {
                     <div className="flex items-center gap-3 mb-2">
                       <div
                         className={`w-3 h-3 rounded-full ${
-                          clockStatus?.clockedIn ? "bg-green-500 animate-pulse" : "bg-gray-300"
+                          onBreak ? "bg-amber-500 animate-pulse" : clockStatus?.clockedIn ? "bg-green-500 animate-pulse" : "bg-gray-300"
                         }`}
                       />
                       <span
                         className={`text-lg font-bold ${
-                          clockStatus?.clockedIn ? "text-green-600" : "text-gray-400"
+                          onBreak ? "text-amber-600" : clockStatus?.clockedIn ? "text-green-600" : "text-gray-400"
                         }`}
                       >
-                        {clockStatus?.clockedIn ? "Clocked In" : "Clocked Out"}
+                        {onBreak ? "On Break" : clockStatus?.clockedIn ? "Clocked In" : "Clocked Out"}
                       </span>
                     </div>
-                    {clockStatus?.clockedIn && (
+                    {clockStatus?.clockedIn && !onBreak && (
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Clock className="w-4 h-4" />
                         <span className="font-mono text-lg font-semibold text-gray-900">
                           {formatElapsed(elapsed)}
+                        </span>
+                      </div>
+                    )}
+                    {onBreak && (
+                      <div className="flex items-center gap-2 text-sm text-amber-600">
+                        <Coffee className="w-4 h-4" />
+                        <span className="font-mono text-lg font-semibold text-amber-700">
+                          Break: {formatElapsed(breakElapsed)}
                         </span>
                       </div>
                     )}
@@ -469,9 +608,34 @@ export default function TeamPortalTimesheet() {
                         className="w-full sm:w-48"
                       />
                     )}
+                    {clockStatus?.clockedIn && !onBreak && (
+                      <Button
+                        disabled={clockLoading}
+                        onClick={handleTakeBreak}
+                        data-testid="button-take-break"
+                        className="min-w-[140px] bg-amber-500 hover:bg-amber-600 text-white"
+                        size="lg"
+                      >
+                        <Coffee className="w-4 h-4 mr-2" />
+                        Take a Break
+                      </Button>
+                    )}
+                    {onBreak && (
+                      <Button
+                        disabled={clockLoading}
+                        onClick={handleResumeWork}
+                        data-testid="button-resume-work"
+                        className="min-w-[140px] bg-green-600 hover:bg-green-700 text-white"
+                        size="lg"
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Resume Work
+                      </Button>
+                    )}
                     <Button
                       disabled={clockLoading}
                       onClick={clockStatus?.clockedIn ? handleClockOut : handleClockIn}
+                      data-testid="button-clock-toggle"
                       className={`min-w-[140px] ${
                         clockStatus?.clockedIn
                           ? "bg-red-600 hover:bg-red-700 text-white"
