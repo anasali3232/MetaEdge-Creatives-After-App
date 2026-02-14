@@ -201,13 +201,13 @@ export interface IStorage {
   deleteScreenshot(id: string): Promise<boolean>;
   deleteOldScreenshots(daysOld: number): Promise<number>;
 
-  createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport>;
+  createWeeklyReport(data: { employeeId: string; teamId: string; title?: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport>;
   getWeeklyReports(teamId?: string, employeeId?: string): Promise<WeeklyReport[]>;
   getWeeklyReportById(id: string): Promise<WeeklyReport | undefined>;
   updateWeeklyReport(id: string, data: any): Promise<WeeklyReport | undefined>;
   deleteWeeklyReport(id: string): Promise<boolean>;
 
-  createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary?: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number; pdfUrl?: string }): Promise<MonthlyReport>;
+  createMonthlyReport(data: { employeeId: string; teamId: string; title?: string; month: string; summary?: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number; pdfUrl?: string }): Promise<MonthlyReport>;
   getMonthlyReports(teamId?: string, employeeId?: string): Promise<MonthlyReport[]>;
   getMonthlyReportById(id: string): Promise<MonthlyReport | undefined>;
   updateMonthlyReport(id: string, data: any): Promise<MonthlyReport | undefined>;
@@ -1634,12 +1634,13 @@ export class DatabaseStorage implements IStorage {
     return old.length;
   }
 
-  async createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport> {
+  async createWeeklyReport(data: { employeeId: string; teamId: string; title?: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport> {
     const id = randomUUID();
     await db.insert(weeklyReports).values({
       id,
       employeeId: data.employeeId,
       teamId: data.teamId,
+      title: data.title ?? null,
       weekStart: data.weekStart,
       weekEnd: data.weekEnd,
       accomplishments: data.accomplishments,
@@ -1693,12 +1694,13 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary?: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number; pdfUrl?: string }): Promise<MonthlyReport> {
+  async createMonthlyReport(data: { employeeId: string; teamId: string; title?: string; month: string; summary?: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number; pdfUrl?: string }): Promise<MonthlyReport> {
     const id = randomUUID();
     await db.insert(monthlyReports).values({
       id,
       employeeId: data.employeeId,
       teamId: data.teamId,
+      title: data.title ?? null,
       month: data.month,
       summary: data.summary ?? null,
       achievements: data.achievements ?? null,

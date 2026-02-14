@@ -38,6 +38,7 @@ interface MonthlyReport {
   employeeName: string;
   teamId: string;
   teamName: string;
+  title: string | null;
   month: string;
   summary: string;
   pdfUrl: string | null;
@@ -90,6 +91,7 @@ export default function TeamPortalMonthlyReports() {
 
   const [formData, setFormData] = useState({
     teamId: "",
+    title: "",
     month: new Date().toISOString().slice(0, 7),
     note: "",
   });
@@ -132,6 +134,7 @@ export default function TeamPortalMonthlyReports() {
   const resetForm = () => {
     setFormData({
       teamId: "",
+      title: "",
       month: new Date().toISOString().slice(0, 7),
       note: "",
     });
@@ -168,6 +171,7 @@ export default function TeamPortalMonthlyReports() {
 
       const body: any = {
         teamId: formData.teamId,
+        title: formData.title || undefined,
         month: formData.month,
         summary: formData.note.trim() || "",
       };
@@ -220,6 +224,7 @@ export default function TeamPortalMonthlyReports() {
     setEditingReport(report);
     setFormData({
       teamId: report.teamId || "",
+      title: report.title || "",
       month: report.month || "",
       note: report.summary || "",
     });
@@ -446,6 +451,17 @@ export default function TeamPortalMonthlyReports() {
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-4" data-testid="form-monthly-report">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Report Name</label>
+                        <input
+                          type="text"
+                          value={formData.title}
+                          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                          data-testid="input-report-title"
+                          placeholder="e.g. February Performance Summary"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
+                        />
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
@@ -607,8 +623,13 @@ export default function TeamPortalMonthlyReports() {
                       <CardContent className="p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
+                            {report.title && (
+                              <p className="font-semibold text-gray-900 text-sm mb-1" data-testid={`text-report-title-${report.id}`}>
+                                {report.title}
+                              </p>
+                            )}
                             <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900" data-testid={`text-employee-name-${report.id}`}>
+                              <span className={`${report.title ? "text-gray-600 text-xs" : "font-medium text-gray-900"}`} data-testid={`text-employee-name-${report.id}`}>
                                 {report.employeeName}
                               </span>
                               {report.teamName && (

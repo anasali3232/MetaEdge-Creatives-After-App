@@ -37,6 +37,7 @@ interface WeeklyReport {
   employeeName: string;
   teamId: string;
   teamName: string;
+  title: string | null;
   weekStart: string;
   weekEnd: string;
   accomplishments: string;
@@ -102,6 +103,7 @@ export default function TeamPortalWeeklyReports() {
   const [filterWeek, setFilterWeek] = useState("");
   const [formData, setFormData] = useState({
     teamId: "",
+    title: "",
     weekStart: "",
     weekEnd: "",
     note: "",
@@ -147,6 +149,7 @@ export default function TeamPortalWeeklyReports() {
   const resetForm = () => {
     setFormData({
       teamId: "",
+      title: "",
       weekStart: "",
       weekEnd: "",
       note: "",
@@ -160,6 +163,7 @@ export default function TeamPortalWeeklyReports() {
     setEditingReport(report);
     setFormData({
       teamId: report.teamId,
+      title: report.title || "",
       weekStart: report.weekStart,
       weekEnd: report.weekEnd,
       note: report.accomplishments || "",
@@ -211,6 +215,7 @@ export default function TeamPortalWeeklyReports() {
       const method = editingReport ? "PUT" : "POST";
       const body: Record<string, unknown> = {
         teamId: formData.teamId,
+        title: formData.title || undefined,
         weekStart: formData.weekStart,
         weekEnd: formData.weekEnd,
         accomplishments: formData.note || "",
@@ -443,6 +448,17 @@ export default function TeamPortalWeeklyReports() {
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Report Name</label>
+                        <input
+                          type="text"
+                          value={formData.title}
+                          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                          data-testid="input-report-title"
+                          placeholder="e.g. Sprint Review Week 7"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
+                        />
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
@@ -637,8 +653,13 @@ export default function TeamPortalWeeklyReports() {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
+                          {report.title && (
+                            <p className="font-semibold text-gray-900 text-sm mb-1" data-testid={`text-report-title-${report.id}`}>
+                              {report.title}
+                            </p>
+                          )}
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-gray-900 text-sm" data-testid={`text-employee-name-${report.id}`}>
+                            <span className={`${report.title ? "text-gray-600 text-xs" : "font-semibold text-gray-900 text-sm"}`} data-testid={`text-employee-name-${report.id}`}>
                               {report.employeeName}
                             </span>
                             {report.teamName && (

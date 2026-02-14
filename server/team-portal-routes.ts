@@ -946,7 +946,7 @@ export function registerTeamPortalRoutes(app: Express) {
 
   app.post("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {
     try {
-      const { teamId, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked, pdfUrl } = req.body;
+      const { teamId, title, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked, pdfUrl } = req.body;
       if (!teamId || !weekStart || !weekEnd) {
         return res.status(400).json({ error: "teamId, weekStart, and weekEnd are required" });
       }
@@ -956,6 +956,7 @@ export function registerTeamPortalRoutes(app: Express) {
       const report = await storage.createWeeklyReport({
         employeeId: req.employeeUser!.employeeId,
         teamId,
+        title,
         weekStart,
         weekEnd,
         accomplishments,
@@ -1043,7 +1044,7 @@ export function registerTeamPortalRoutes(app: Express) {
 
   app.post("/api/team-portal/monthly-reports", employeeAuth, async (req: Request, res: Response) => {
     try {
-      const { teamId, month, summary, achievements, challenges, goalsNextMonth, totalHours, tasksCompleted, pdfUrl } = req.body;
+      const { teamId, title, month, summary, achievements, challenges, goalsNextMonth, totalHours, tasksCompleted, pdfUrl } = req.body;
       if (!teamId || !month) {
         return res.status(400).json({ error: "teamId and month are required" });
       }
@@ -1053,6 +1054,7 @@ export function registerTeamPortalRoutes(app: Express) {
       const report = await storage.createMonthlyReport({
         employeeId: req.employeeUser!.employeeId,
         teamId,
+        title,
         month,
         summary: summary || "",
         achievements,

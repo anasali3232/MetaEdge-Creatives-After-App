@@ -157,6 +157,8 @@ app.use((req, res, next) => {
       { table: "weekly_reports", column: "pdf_url", sql: "ALTER TABLE weekly_reports ADD COLUMN pdf_url TEXT" },
       { table: "weekly_reports", column: "updated_at", sql: "ALTER TABLE weekly_reports ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL" },
       { table: "monthly_reports", column: "updated_at", sql: "ALTER TABLE monthly_reports ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL" },
+      { table: "weekly_reports", column: "title", sql: "ALTER TABLE weekly_reports ADD COLUMN title VARCHAR(255)" },
+      { table: "monthly_reports", column: "title", sql: "ALTER TABLE monthly_reports ADD COLUMN title VARCHAR(255)" },
     ];
 
     for (const check of columnChecks) {
