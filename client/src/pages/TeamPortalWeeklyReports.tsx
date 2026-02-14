@@ -48,6 +48,21 @@ interface WeeklyReport {
   createdAt: string;
 }
 
+async function downloadFile(url: string, token: string) {
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Download failed");
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, "_blank");
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+  } catch {
+    alert("Failed to download file");
+  }
+}
+
 async function uploadFile(file: File, token: string): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
@@ -673,18 +688,19 @@ export default function TeamPortalWeeklyReports() {
                           </p>
                           {report.pdfUrl && (
                             <div className="mt-2">
-                              <a
-                                href={report.pdfUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 text-sm text-[#C41E3A] hover:underline"
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-2 text-sm text-[#C41E3A] hover:underline cursor-pointer"
                                 data-testid={`link-file-${report.id}`}
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (token) downloadFile(report.pdfUrl!, token);
+                                }}
                               >
                                 <Paperclip className="w-4 h-4" />
                                 {getFileName(report.pdfUrl)}
                                 <ExternalLink className="w-3 h-3" />
-                              </a>
+                              </button>
                             </div>
                           )}
                           {report.accomplishments && (

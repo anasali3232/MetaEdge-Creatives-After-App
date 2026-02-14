@@ -1674,6 +1674,7 @@ export class DatabaseStorage implements IStorage {
     const [existing] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
     if (!existing) return undefined;
     const updateData: Record<string, any> = {};
+    if (data.title !== undefined) updateData.title = data.title;
     if (data.accomplishments !== undefined) updateData.accomplishments = data.accomplishments;
     if (data.challenges !== undefined) updateData.challenges = data.challenges;
     if (data.nextWeekPlan !== undefined) updateData.nextWeekPlan = data.nextWeekPlan;
@@ -1735,6 +1736,7 @@ export class DatabaseStorage implements IStorage {
     const [existing] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));
     if (!existing) return undefined;
     const updateData: Record<string, any> = {};
+    if (data.title !== undefined) updateData.title = data.title;
     if (data.summary !== undefined) updateData.summary = data.summary;
     if (data.achievements !== undefined) updateData.achievements = data.achievements;
     if (data.challenges !== undefined) updateData.challenges = data.challenges;
