@@ -21,6 +21,7 @@ import {
   Trash2,
   Paperclip,
   ExternalLink,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,10 +57,16 @@ async function downloadFile(url: string, token: string) {
     if (!res.ok) throw new Error("Download failed");
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
-    window.open(blobUrl, "_blank");
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    const filename = decodeURIComponent(url.split("/").pop() || "attachment");
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
   } catch {
-    alert("Failed to download file");
+    alert("Failed to download file. Please try again.");
   }
 }
 
@@ -697,9 +704,8 @@ export default function TeamPortalWeeklyReports() {
                                   if (token) downloadFile(report.pdfUrl!, token);
                                 }}
                               >
-                                <Paperclip className="w-4 h-4" />
-                                {getFileName(report.pdfUrl)}
-                                <ExternalLink className="w-3 h-3" />
+                                <Download className="w-4 h-4" />
+                                Download {getFileName(report.pdfUrl)}
                               </button>
                             </div>
                           )}
