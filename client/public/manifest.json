@@ -1,0 +1,38 @@
+{
+  "name": "MetaEdge Team Portal",
+  "short_name": "MetaEdge",
+  "description": "Clock in/out, manage tasks, timesheets, leaves, and more — MetaEdge Creatives Team Portal",
+  "start_url": "/team-portal/login",
+  "scope": "/team-portal/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#C41E3A",
+  "orientation": "portrait-primary",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/metaedge-icon-v2-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/metaedge-icon-v2-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/metaedge-icon-v2-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/metaedge-icon-v2-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
