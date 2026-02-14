@@ -1403,6 +1403,28 @@ export async function registerRoutes(
         ${result.data.cvUrl ? `<p><strong>CV:</strong> <a href="${result.data.cvUrl}">Download</a></p>` : ""}`,
         "hr"
       );
+      sendEmailTo(
+        result.data.email,
+        `Application Received - ${career.title} | MetaEdge Creatives`,
+        `<h2 style="color:#C41E3A;margin:0 0 16px;font-size:22px;">Application Received!</h2>
+        <p style="font-size:15px;color:#333;line-height:1.6;">Dear <strong>${result.data.firstName} ${result.data.lastName}</strong>,</p>
+        <p style="font-size:15px;color:#333;line-height:1.6;">Thank you for applying for the <strong>${career.title}</strong> position at MetaEdge Creatives. We have successfully received your application and our HR team is now reviewing it.</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+          <tr>
+            <td style="background:#fdf2f4;border-radius:10px;padding:20px 24px;border:1px solid #fce4e8;">
+              <p style="margin:0 0 8px;font-size:14px;color:#333;font-weight:700;">Application Details</p>
+              <p style="margin:0 0 4px;font-size:13px;color:#555;"><strong>Position:</strong> ${career.title}</p>
+              <p style="margin:0 0 4px;font-size:13px;color:#555;"><strong>Name:</strong> ${result.data.firstName} ${result.data.lastName}</p>
+              <p style="margin:0 0 4px;font-size:13px;color:#555;"><strong>Email:</strong> ${result.data.email}</p>
+              ${career.location ? `<p style="margin:0;font-size:13px;color:#555;"><strong>Location:</strong> ${career.location}</p>` : ""}
+            </td>
+          </tr>
+        </table>
+        <p style="font-size:15px;color:#333;line-height:1.6;">We will carefully review your qualifications and experience. If your profile matches our requirements, we will reach out to you for the next steps in the hiring process.</p>
+        <p style="font-size:15px;color:#333;line-height:1.6;">Please feel free to contact us at <a href="mailto:info@metaedgecreatives.com" style="color:#C41E3A;text-decoration:none;font-weight:600;">info@metaedgecreatives.com</a> if you have any questions.</p>
+        <p style="font-size:14px;color:#888;margin-top:20px;line-height:1.5;">We appreciate your interest in joining MetaEdge Creatives and wish you the best of luck!</p>`,
+        "hr"
+      );
       res.json({ success: true, message: "Application submitted successfully!" });
     } catch (error) {
       console.error("Job application error:", error);
