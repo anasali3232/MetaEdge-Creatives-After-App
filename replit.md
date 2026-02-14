@@ -36,13 +36,15 @@ A separate `team-portal` system with its own JWT-based authentication (5-minute 
 
 #### Employee Monitoring Features
 - **Activity Heartbeats**: Employees send heartbeat pings every 2 minutes to track active status. Admin dashboard shows real-time active/inactive indicators.
-- **Screenshot Capture**: Browser-based screen capture every 10 minutes (requires user permission via Screen Capture API). Screenshots stored in database as base64 JPEG. Admin-only screenshot viewer page.
+- **Screenshot Capture**: Silent DOM capture every 10 minutes using html2canvas (no permission popups). Screenshots stored in database as base64 JPEG. Admin-only screenshot viewer page. Only captures when clocked in and not on break.
 - **Inactive Employee Indicator**: Dark red ring around employee avatars when inactive 10+ minutes (based on heartbeat data). Green ring when active.
-- **Weekly Reports**: Employees submit weekly reports (accomplishments, challenges, next week plan) by team with optional PDF attachment. Week-by-week filter for easy navigation. Team members can view their team's reports; admins see all.
-- **Auto Screen Sharing**: Screen sharing starts automatically on Clock In and stops on Clock Out (no separate toggle). Integrated into both Dashboard and Timesheet pages.
-- **Break System**: "Take a Break" button pauses the work timer, stops screenshots/heartbeats, and shows break duration. "Resume Work" restarts tracking and screen sharing.
-- **Monthly Reports**: Similar to weekly but with monthly summary, achievements, goals for next month, hours/tasks stats.
+- **Weekly Reports**: Simplified file upload system (PDF/ZIP/Word) with optional note. Team-restricted (employees only see their own teams). Multiple submissions per week allowed. Week-by-week filter for navigation.
+- **Monthly Reports**: Same simplified pattern as weekly - file upload + optional note. Uses pdfUrl field for attachments.
+- **Break System**: "Take a Break" button pauses the work timer, stops screenshots/heartbeats, and shows break duration. "Resume Work" restarts tracking.
 - **Performance Graphs**: Weekly activity bar chart with trend comparison vs last week (arrow up/down with percentage).
+- **Profile Self-Editing**: Employees can edit name, avatar, designation, and description via profile dialog on Dashboard. Team assignment locked to full-access users only.
+- **Task Permissions**: Only full-access users can create and delete tasks (backend + frontend enforced). All users can move tasks between columns.
+- **Mobile UX**: Off-canvas slide-in sidebar navigation across all 10 Team Portal pages with hamburger trigger and X close button.
 
 #### New Database Tables (Feb 2026)
 - `activity_heartbeats` - Employee activity tracking
