@@ -879,6 +879,21 @@ export function registerTeamPortalRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/team-portal/screenshots/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      if (!isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "Only admins can delete screenshots" });
+      }
+      const deleted = await storage.deleteScreenshot(req.params.id as string);
+      if (!deleted) {
+        return res.status(404).json({ error: "Screenshot not found" });
+      }
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to delete screenshot" });
+    }
+  });
+
   app.post("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {
     try {
       const { teamId, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked, pdfUrl } = req.body;

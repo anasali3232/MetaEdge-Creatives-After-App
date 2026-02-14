@@ -19,6 +19,7 @@ import {
   ShieldX,
   Monitor,
   Image as ImageIcon,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -137,6 +138,23 @@ export default function TeamPortalScreenshots() {
       // ignore
     }
     setDetailLoading(false);
+  };
+
+  const handleDeleteScreenshot = async (id: string) => {
+    if (!token || !confirm("Are you sure you want to delete this screenshot?")) return;
+    try {
+      const res = await fetch(`/api/team-portal/screenshots/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        fetchScreenshots();
+        if (selectedScreenshot?.id === id) {
+          setModalOpen(false);
+          setSelectedScreenshot(null);
+        }
+      }
+    } catch {}
   };
 
   if (isLoading) {
@@ -358,10 +376,19 @@ export default function TeamPortalScreenshots() {
                   transition={{ duration: 0.3 }}
                 >
                   <Card
-                    className="cursor-pointer transition-shadow hover:shadow-md"
+                    className="cursor-pointer transition-shadow hover:shadow-md relative"
                     onClick={() => handleViewScreenshot(shot.id)}
                     data-testid={`card-screenshot-${shot.id}`}
                   >
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-2 right-2 z-10 bg-white/80 hover:bg-red-50 text-gray-500 hover:text-red-600"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteScreenshot(shot.id); }}
+                      data-testid={`button-delete-screenshot-${shot.id}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                     <CardContent className="p-0">
                       <div className="aspect-video bg-gray-100 rounded-t-lg flex items-center justify-center overflow-hidden">
                         {shot.imageData ? (
@@ -432,6 +459,18 @@ export default function TeamPortalScreenshots() {
                     <ImageIcon className="w-16 h-16" />
                   </div>
                 )}
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:bg-red-50"
+                  onClick={() => handleDeleteScreenshot(selectedScreenshot.id)}
+                  data-testid="button-delete-screenshot-modal"
+                >
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Delete
+                </Button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {selectedScreenshot.employeeName && (

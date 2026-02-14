@@ -198,6 +198,7 @@ export interface IStorage {
   createScreenshot(data: { employeeId: string; imageData: string; appName?: string; windowTitle?: string }): Promise<Screenshot>;
   getScreenshots(employeeId?: string, limit?: number): Promise<Screenshot[]>;
   getScreenshotById(id: string): Promise<Screenshot | undefined>;
+  deleteScreenshot(id: string): Promise<boolean>;
   deleteOldScreenshots(daysOld: number): Promise<number>;
 
   createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport>;
@@ -1615,6 +1616,13 @@ export class DatabaseStorage implements IStorage {
   async getScreenshotById(id: string): Promise<Screenshot | undefined> {
     const [s] = await db.select().from(screenshots).where(eq(screenshots.id, id));
     return s;
+  }
+
+  async deleteScreenshot(id: string): Promise<boolean> {
+    const existing = await db.select({ id: screenshots.id }).from(screenshots).where(eq(screenshots.id, id));
+    if (existing.length === 0) return false;
+    await db.delete(screenshots).where(eq(screenshots.id, id));
+    return true;
   }
 
   async deleteOldScreenshots(daysOld: number): Promise<number> {

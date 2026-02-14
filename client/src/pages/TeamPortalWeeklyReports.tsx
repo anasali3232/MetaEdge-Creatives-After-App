@@ -194,6 +194,14 @@ export default function TeamPortalWeeklyReports() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
+    if (!formData.teamId) {
+      alert("Please select a team");
+      return;
+    }
+    if (!formData.weekStart || !formData.weekEnd) {
+      alert("Please select week start and end dates");
+      return;
+    }
     if (!selectedFile && !formData.note.trim()) return;
     setFormLoading(true);
     try {
@@ -202,8 +210,11 @@ export default function TeamPortalWeeklyReports() {
         setFileUploading(true);
         try {
           uploadedFileUrl = await uploadFile(selectedFile, token);
-        } catch {
+        } catch (err) {
           setFileUploading(false);
+          setFormLoading(false);
+          alert("File upload failed. Please try again.");
+          return;
         }
         setFileUploading(false);
       }
@@ -212,7 +223,7 @@ export default function TeamPortalWeeklyReports() {
         : "/api/team-portal/weekly-reports";
       const method = editingReport ? "PUT" : "POST";
       const body: Record<string, unknown> = {
-        teamId: formData.teamId || undefined,
+        teamId: formData.teamId,
         weekStart: formData.weekStart,
         weekEnd: formData.weekEnd,
         accomplishments: formData.note || "",
@@ -229,6 +240,9 @@ export default function TeamPortalWeeklyReports() {
       if (res.ok) {
         resetForm();
         fetchReports();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Failed to submit report");
       }
     } catch {}
     setFormLoading(false);
@@ -567,6 +581,7 @@ export default function TeamPortalWeeklyReports() {
             )}
           </AnimatePresence>
 
+          {isFullAccess && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -606,6 +621,7 @@ export default function TeamPortalWeeklyReports() {
               </span>
             </div>
           </motion.div>
+          )}
 
           {reportsLoading ? (
             <div className="flex items-center justify-center py-16">

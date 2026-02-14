@@ -29,9 +29,26 @@ export function useTeamAuth(): TeamAuth {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("team_token"));
   const [user, setUser] = useState<TeamUser | null>(() => {
     const saved = localStorage.getItem("team_user");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved);
+    } catch {
+      localStorage.removeItem("team_user");
+      return null;
+    }
   });
-  const [isLoading, setIsLoading] = useState(!!localStorage.getItem("team_token") && !localStorage.getItem("team_user"));
+  const [isLoading, setIsLoading] = useState(() => {
+    const savedToken = localStorage.getItem("team_token");
+    const savedUser = localStorage.getItem("team_user");
+    if (!savedToken) return false;
+    if (!savedUser) return true;
+    try {
+      JSON.parse(savedUser);
+      return false;
+    } catch {
+      return true;
+    }
+  });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -56,6 +73,29 @@ export function useTeamAuth(): TeamAuth {
         .finally(() => setIsLoading(false));
     }
   }, [token, user]);
+
+  useEffect(() => {
+    if (token && user) {
+      fetch("/api/team-portal/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error("Invalid token");
+          return r.json();
+        })
+        .then((data) => {
+          setUser(data);
+          localStorage.setItem("team_user", JSON.stringify(data));
+        })
+        .catch(() => {
+          setToken(null);
+          setUser(null);
+          localStorage.removeItem("team_token");
+          localStorage.removeItem("team_user");
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const doLogout = useCallback(() => {
     setToken(null);

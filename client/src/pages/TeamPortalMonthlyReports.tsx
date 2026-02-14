@@ -156,6 +156,10 @@ export default function TeamPortalMonthlyReports() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
+    if (!formData.teamId) {
+      alert("Please select a team");
+      return;
+    }
     if (!pdfFile && !formData.note.trim()) return;
 
     setSubmitting(true);
@@ -166,13 +170,17 @@ export default function TeamPortalMonthlyReports() {
         setPdfUploading(true);
         try {
           pdfUrl = await uploadFile(pdfFile, token);
-        } finally {
+        } catch (err) {
           setPdfUploading(false);
+          setSubmitting(false);
+          alert("File upload failed. Please try again.");
+          return;
         }
+        setPdfUploading(false);
       }
 
       const body: any = {
-        teamId: formData.teamId || undefined,
+        teamId: formData.teamId,
         month: formData.month,
         summary: formData.note.trim() || "",
       };
@@ -199,6 +207,9 @@ export default function TeamPortalMonthlyReports() {
         resetForm();
         setShowForm(false);
         fetchReports();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Failed to submit report");
       }
     } catch {
     } finally {
@@ -559,24 +570,26 @@ export default function TeamPortalMonthlyReports() {
             )}
           </AnimatePresence>
 
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <select
-              value={filterTeam}
-              onChange={(e) => setFilterTeam(e.target.value)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-              data-testid="select-filter-team"
-            >
-              <option value="">All Teams</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <span className="text-sm text-gray-500" data-testid="text-report-count">
-              {filteredReports.length} report{filteredReports.length !== 1 ? "s" : ""}
-            </span>
-          </div>
+          {isFullAccess && (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <select
+                value={filterTeam}
+                onChange={(e) => setFilterTeam(e.target.value)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
+                data-testid="select-filter-team"
+              >
+                <option value="">All Teams</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm text-gray-500" data-testid="text-report-count">
+                {filteredReports.length} report{filteredReports.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
 
           {loadingReports ? (
             <div className="flex items-center justify-center py-12">
