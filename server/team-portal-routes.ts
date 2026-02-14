@@ -114,13 +114,14 @@ export function registerTeamPortalRoutes(app: Express) {
           name: employee.name,
           role: employee.role,
           designation: employee.designation,
-          description: employee.description,
+          description: (employee as any).description || null,
           accessLevel: employee.accessLevel,
           accessTeams: employee.accessLevel === "full" ? teamIds : accessTeams,
           avatarUrl: employee.avatarUrl,
         },
       });
     } catch (error) {
+      console.error("Login error:", error);
       res.status(500).json({ error: "Login failed" });
     }
   });
