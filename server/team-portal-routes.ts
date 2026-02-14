@@ -965,7 +965,8 @@ export function registerTeamPortalRoutes(app: Express) {
         pdfUrl,
       });
       res.json(report);
-    } catch {
+    } catch (err: any) {
+      console.error("Weekly report creation error:", err?.message || err);
       res.status(500).json({ error: "Failed to create weekly report" });
     }
   });
@@ -1062,7 +1063,8 @@ export function registerTeamPortalRoutes(app: Express) {
         pdfUrl,
       });
       res.json(report);
-    } catch {
+    } catch (err: any) {
+      console.error("Monthly report creation error:", err?.message || err);
       res.status(500).json({ error: "Failed to create monthly report" });
     }
   });

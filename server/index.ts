@@ -96,6 +96,9 @@ app.use((req, res, next) => {
     const columnChecks = [
       { table: "employees", column: "description", sql: "ALTER TABLE employees ADD COLUMN description TEXT" },
       { table: "monthly_reports", column: "pdf_url", sql: "ALTER TABLE monthly_reports ADD COLUMN pdf_url TEXT" },
+      { table: "weekly_reports", column: "pdf_url", sql: "ALTER TABLE weekly_reports ADD COLUMN pdf_url TEXT" },
+      { table: "weekly_reports", column: "updated_at", sql: "ALTER TABLE weekly_reports ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL" },
+      { table: "monthly_reports", column: "updated_at", sql: "ALTER TABLE monthly_reports ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL" },
     ];
 
     for (const check of columnChecks) {
