@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation } from "wouter";
 import {
@@ -21,6 +21,9 @@ import {
   ChevronUp,
   Pencil,
   Trash2,
+  Upload,
+  Paperclip,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +46,45 @@ interface WeeklyReport {
   challenges: string;
   nextWeekPlan: string;
   hoursWorked: number | null;
+  pdfUrl: string | null;
   createdAt: string;
+}
+
+async function uploadPdfFile(file: File, token: string): Promise<string> {
+  const metaRes = await fetch("/api/uploads/request-url", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: file.name,
+      size: file.size,
+      contentType: file.type || "application/pdf",
+    }),
+  });
+  if (!metaRes.ok) {
+    const errData = await metaRes.json().catch(() => ({}));
+    throw new Error(errData.error || "Failed to get upload URL");
+  }
+  const { uploadURL, objectPath } = await metaRes.json();
+  const uploadRes = await fetch(uploadURL, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/pdf" },
+  });
+  if (!uploadRes.ok) {
+    throw new Error("Failed to upload file");
+  }
+  return objectPath;
+}
+
+function getWeekLabel(weekStart: string): string {
+  const d = new Date(weekStart + "T00:00:00");
+  const month = d.toLocaleString("default", { month: "short" });
+  const day = d.getDate();
+  const year = d.getFullYear();
+  return `Week of ${month} ${day}, ${year}`;
 }
 
 const NAV_ITEMS = [
@@ -73,6 +114,9 @@ export default function TeamPortalWeeklyReports() {
   const [showForm, setShowForm] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [editingReport, setEditingReport] = useState<WeeklyReport | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [filterWeek, setFilterWeek] = useState("");
   const [formData, setFormData] = useState({
     teamId: "",
     weekStart: "",
@@ -124,6 +168,7 @@ export default function TeamPortalWeeklyReports() {
       nextWeekPlan: "",
       hoursWorked: "",
     });
+    setPdfFile(null);
     setEditingReport(null);
     setShowForm(false);
   };
@@ -158,6 +203,16 @@ export default function TeamPortalWeeklyReports() {
     if (!token || !formData.accomplishments.trim()) return;
     setFormLoading(true);
     try {
+      let uploadedPdfUrl: string | undefined;
+      if (pdfFile) {
+        setPdfUploading(true);
+        try {
+          uploadedPdfUrl = await uploadPdfFile(pdfFile, token);
+        } catch {
+          setPdfUploading(false);
+        }
+        setPdfUploading(false);
+      }
       const url = editingReport
         ? `/api/team-portal/weekly-reports/${editingReport.id}`
         : "/api/team-portal/weekly-reports";
@@ -170,6 +225,7 @@ export default function TeamPortalWeeklyReports() {
         challenges: formData.challenges || undefined,
         nextWeekPlan: formData.nextWeekPlan || undefined,
         hoursWorked: formData.hoursWorked ? Number(formData.hoursWorked) : undefined,
+        pdfUrl: uploadedPdfUrl || undefined,
       };
       const res = await fetch(url, {
         method,
@@ -209,9 +265,21 @@ export default function TeamPortalWeeklyReports() {
     .toUpperCase()
     .slice(0, 2);
 
-  const filteredReports = filterTeam
-    ? reports.filter((r) => r.teamId === filterTeam)
-    : reports;
+  const availableWeeks = useMemo(() => {
+    const weekSet = new Map<string, string>();
+    reports.forEach((r) => {
+      if (r.weekStart && !weekSet.has(r.weekStart)) {
+        weekSet.set(r.weekStart, `${r.weekStart} — ${r.weekEnd}`);
+      }
+    });
+    return Array.from(weekSet.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([value, label]) => ({ value, label }));
+  }, [reports]);
+
+  const filteredReports = reports
+    .filter((r) => !filterTeam || r.teamId === filterTeam)
+    .filter((r) => !filterWeek || r.weekStart === filterWeek);
 
   const canModify = (report: WeeklyReport) =>
     isFullAccess || report.employeeId === user.id;
@@ -458,6 +526,49 @@ export default function TeamPortalWeeklyReports() {
                         />
                       </div>
 
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Attach PDF (optional)</label>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <label
+                            className="flex items-center gap-2 px-4 py-2 border border-dashed border-gray-300 rounded-md cursor-pointer text-sm text-gray-600 hover:border-[#C41E3A] hover:text-[#C41E3A] transition-colors"
+                            data-testid="label-pdf-upload"
+                          >
+                            <Upload className="w-4 h-4" />
+                            {pdfFile ? pdfFile.name : "Choose PDF file"}
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              className="hidden"
+                              data-testid="input-pdf-upload"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f && f.size > 10 * 1024 * 1024) {
+                                  alert("File must be under 10MB");
+                                  return;
+                                }
+                                setPdfFile(f || null);
+                              }}
+                            />
+                          </label>
+                          {pdfFile && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setPdfFile(null)}
+                              data-testid="button-remove-pdf"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {pdfUploading && (
+                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                              <Loader2 className="w-3 h-3 animate-spin" /> Uploading...
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-3 flex-wrap">
                         <Button
                           type="submit"
@@ -493,7 +604,7 @@ export default function TeamPortalWeeklyReports() {
             className="mb-4"
           >
             <div className="flex items-center gap-3 flex-wrap">
-              <label className="text-sm font-medium text-gray-700">Filter by team:</label>
+              <label className="text-sm font-medium text-gray-700">Filter:</label>
               <select
                 value={filterTeam}
                 onChange={(e) => setFilterTeam(e.target.value)}
@@ -504,6 +615,19 @@ export default function TeamPortalWeeklyReports() {
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filterWeek}
+                onChange={(e) => setFilterWeek(e.target.value)}
+                data-testid="select-filter-week"
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
+              >
+                <option value="">All Weeks</option>
+                {availableWeeks.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {getWeekLabel(w.value)}
                   </option>
                 ))}
               </select>
@@ -559,6 +683,9 @@ export default function TeamPortalWeeklyReports() {
                                 <span className="text-xs text-gray-500">
                                   {report.hoursWorked}h
                                 </span>
+                              )}
+                              {report.pdfUrl && (
+                                <Paperclip className="w-3 h-3 text-[#C41E3A]" />
                               )}
                             </div>
                             <p className="text-xs text-gray-400 mt-0.5">
@@ -651,6 +778,24 @@ export default function TeamPortalWeeklyReports() {
                                     <p className="text-sm text-gray-700" data-testid={`text-hours-${report.id}`}>
                                       {report.hoursWorked} hours
                                     </p>
+                                  </div>
+                                )}
+                                {report.pdfUrl && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                                      Attached PDF
+                                    </p>
+                                    <a
+                                      href={report.pdfUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-2 text-sm text-[#C41E3A] hover:underline"
+                                      data-testid={`link-pdf-${report.id}`}
+                                    >
+                                      <Paperclip className="w-4 h-4" />
+                                      View PDF
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
                                   </div>
                                 )}
                               </div>

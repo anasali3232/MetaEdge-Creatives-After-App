@@ -1671,6 +1671,7 @@ export class DatabaseStorage implements IStorage {
     if (data.hoursWorked !== undefined) updateData.hoursWorked = data.hoursWorked;
     if (data.weekStart !== undefined) updateData.weekStart = data.weekStart;
     if (data.weekEnd !== undefined) updateData.weekEnd = data.weekEnd;
+    if (data.pdfUrl !== undefined) updateData.pdfUrl = data.pdfUrl;
     updateData.updatedAt = new Date();
     await db.update(weeklyReports).set(updateData).where(eq(weeklyReports.id, id));
     const [updated] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
