@@ -91,17 +91,30 @@ app.use((req, res, next) => {
   try {
     const mysql = await import("mysql2/promise");
     const migrationPool = mysql.createPool(process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL!);
-    const migrations = [
-      "ALTER TABLE employees ADD COLUMN IF NOT EXISTS description TEXT",
-      "ALTER TABLE monthly_reports ADD COLUMN IF NOT EXISTS pdf_url TEXT",
+    const dbName = (process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL || "").match(/\/([^/?]+)(\?|$)/)?.[1] || "metaedge";
+
+    const columnChecks = [
+      { table: "employees", column: "description", sql: "ALTER TABLE employees ADD COLUMN description TEXT" },
+      { table: "monthly_reports", column: "pdf_url", sql: "ALTER TABLE monthly_reports ADD COLUMN pdf_url TEXT" },
     ];
-    for (const query of migrations) {
-      try { await migrationPool.query(query); } catch (e: any) {
-        if (e.code !== 'ER_DUP_FIELDNAME' && !e.message?.includes('Duplicate column')) {
-          console.log("Migration notice:", e.message);
+
+    for (const check of columnChecks) {
+      try {
+        const [rows]: any = await migrationPool.query(
+          "SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+          [dbName, check.table, check.column]
+        );
+        if (rows[0]?.cnt === 0) {
+          await migrationPool.query(check.sql);
+          log(`Added column ${check.column} to ${check.table}`, "migration");
+        }
+      } catch (e: any) {
+        if (!e.message?.includes("doesn't exist") && e.code !== 'ER_DUP_FIELDNAME') {
+          console.log(`Migration notice (${check.table}.${check.column}):`, e.message);
         }
       }
     }
+
     await migrationPool.end();
     log("Database columns verified", "migration");
   } catch (e: any) {
