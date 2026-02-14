@@ -558,6 +558,7 @@ export const weeklyReports = mysqlTable("weekly_reports", {
   challenges: text("challenges"),
   nextWeekPlan: text("next_week_plan"),
   hoursWorked: int("hours_worked"),
+  pdfUrl: text("pdf_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

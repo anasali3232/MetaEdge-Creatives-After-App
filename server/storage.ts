@@ -200,7 +200,7 @@ export interface IStorage {
   getScreenshotById(id: string): Promise<Screenshot | undefined>;
   deleteOldScreenshots(daysOld: number): Promise<number>;
 
-  createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number }): Promise<WeeklyReport>;
+  createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport>;
   getWeeklyReports(teamId?: string, employeeId?: string): Promise<WeeklyReport[]>;
   getWeeklyReportById(id: string): Promise<WeeklyReport | undefined>;
   updateWeeklyReport(id: string, data: any): Promise<WeeklyReport | undefined>;
@@ -1626,7 +1626,7 @@ export class DatabaseStorage implements IStorage {
     return old.length;
   }
 
-  async createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number }): Promise<WeeklyReport> {
+  async createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number; pdfUrl?: string }): Promise<WeeklyReport> {
     const id = randomUUID();
     await db.insert(weeklyReports).values({
       id,
@@ -1638,6 +1638,7 @@ export class DatabaseStorage implements IStorage {
       challenges: data.challenges ?? null,
       nextWeekPlan: data.nextWeekPlan ?? null,
       hoursWorked: data.hoursWorked ?? null,
+      pdfUrl: data.pdfUrl ?? null,
     });
     const [created] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
     return created;

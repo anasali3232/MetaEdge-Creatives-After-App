@@ -847,7 +847,7 @@ export function registerTeamPortalRoutes(app: Express) {
 
   app.post("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {
     try {
-      const { teamId, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked } = req.body;
+      const { teamId, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked, pdfUrl } = req.body;
       if (!teamId || !weekStart || !weekEnd || !accomplishments) {
         return res.status(400).json({ error: "teamId, weekStart, weekEnd, and accomplishments are required" });
       }
@@ -860,6 +860,7 @@ export function registerTeamPortalRoutes(app: Express) {
         challenges,
         nextWeekPlan,
         hoursWorked,
+        pdfUrl,
       });
       res.json(report);
     } catch {
