@@ -87,12 +87,70 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Auto-migrate: add any missing columns before Drizzle queries run
+  // Auto-migrate: create missing tables and add missing columns before Drizzle queries run
   try {
     const mysql = await import("mysql2/promise");
     const migrationPool = mysql.createPool(process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL!);
     const dbName = (process.env.MYSQL_DATABASE_URL || process.env.DATABASE_URL || "").match(/\/([^/?]+)(\?|$)/)?.[1] || "metaedge";
 
+    // Create tables that may not exist yet
+    const createTables = [
+      `CREATE TABLE IF NOT EXISTS activity_heartbeats (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        last_active TIMESTAMP NOT NULL,
+        app_name VARCHAR(255),
+        window_title TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS screenshots (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        image_data LONGTEXT NOT NULL,
+        app_name VARCHAR(255),
+        window_title TEXT,
+        captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS weekly_reports (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        team_id VARCHAR(36) NOT NULL,
+        week_start VARCHAR(10) NOT NULL,
+        week_end VARCHAR(10) NOT NULL,
+        accomplishments TEXT NOT NULL,
+        challenges TEXT,
+        next_week_plan TEXT,
+        hours_worked INT,
+        pdf_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS monthly_reports (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        team_id VARCHAR(36) NOT NULL,
+        month VARCHAR(7) NOT NULL,
+        summary TEXT,
+        achievements TEXT,
+        challenges TEXT,
+        goals_next_month TEXT,
+        total_hours INT,
+        tasks_completed INT,
+        pdf_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+      )`,
+    ];
+
+    for (const sql of createTables) {
+      try {
+        await migrationPool.query(sql);
+      } catch (e: any) {
+        console.log("Table creation notice:", e.message);
+      }
+    }
+    log("Database tables verified", "migration");
+
+    // Add any missing columns to existing tables
     const columnChecks = [
       { table: "employees", column: "description", sql: "ALTER TABLE employees ADD COLUMN description TEXT" },
       { table: "monthly_reports", column: "pdf_url", sql: "ALTER TABLE monthly_reports ADD COLUMN pdf_url TEXT" },
@@ -112,7 +170,7 @@ app.use((req, res, next) => {
           log(`Added column ${check.column} to ${check.table}`, "migration");
         }
       } catch (e: any) {
-        if (!e.message?.includes("doesn't exist") && e.code !== 'ER_DUP_FIELDNAME') {
+        if (e.code !== 'ER_DUP_FIELDNAME') {
           console.log(`Migration notice (${check.table}.${check.column}):`, e.message);
         }
       }
