@@ -6,6 +6,7 @@ interface TeamUser {
   name: string;
   role: string;
   designation: string | null;
+  description: string | null;
   accessLevel: string;
   accessTeams: string[];
   avatarUrl: string | null;
@@ -17,6 +18,7 @@ interface TeamAuth {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  refreshUser: () => void;
   isFullAccess: boolean;
   canAccessTeam: (teamId: string) => boolean;
 }
@@ -103,6 +105,22 @@ export function useTeamAuth(): TeamAuth {
     }
   }, []);
 
+  const refreshUser = useCallback(() => {
+    if (!token) return;
+    fetch("/api/team-portal/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("Invalid token");
+        return r.json();
+      })
+      .then((data) => {
+        setUser(data);
+        localStorage.setItem("team_user", JSON.stringify(data));
+      })
+      .catch(() => {});
+  }, [token]);
+
   const canAccessTeam = useCallback(
     (teamId: string) => {
       if (!user) return false;
@@ -118,6 +136,7 @@ export function useTeamAuth(): TeamAuth {
     isLoading,
     login,
     logout: doLogout,
+    refreshUser,
     isFullAccess: user?.accessLevel === "full" || false,
     canAccessTeam,
   };

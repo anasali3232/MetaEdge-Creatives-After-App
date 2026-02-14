@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation } from "wouter";
 import {
@@ -17,10 +17,11 @@ import {
   FileText,
   Camera,
   Plus,
-  ChevronDown,
-  ChevronUp,
   Pencil,
   Trash2,
+  Upload,
+  Paperclip,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,11 +40,7 @@ interface MonthlyReport {
   teamName: string;
   month: string;
   summary: string;
-  achievements?: string;
-  challenges?: string;
-  goalsNextMonth?: string;
-  totalHours?: number;
-  tasksCompleted?: number;
+  pdfUrl: string | null;
   createdAt: string;
 }
 
@@ -60,6 +57,38 @@ const NAV_ITEMS = [
   { label: "Teams", icon: UserPlus, path: "/team-portal/teams", fullAccessOnly: true },
 ];
 
+async function uploadFile(file: File, token: string): Promise<string> {
+  const metaRes = await fetch("/api/uploads/request-url", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: file.name,
+      size: file.size,
+      contentType: file.type || "application/octet-stream",
+    }),
+  });
+  if (!metaRes.ok) {
+    const errData = await metaRes.json().catch(() => ({}));
+    throw new Error(errData.error || "Failed to get upload URL");
+  }
+  const { uploadURL, objectPath } = await metaRes.json();
+  const uploadRes = await fetch(uploadURL, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (!uploadRes.ok) {
+    throw new Error("Failed to upload file");
+  }
+  return objectPath;
+}
+
+const ACCEPTED_TYPES = ".pdf,.zip,.doc,.docx";
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 export default function TeamPortalMonthlyReports() {
   const { token, user, isLoading, logout, isFullAccess } = useTeamAuth();
   const [, setLocation] = useLocation();
@@ -69,20 +98,18 @@ export default function TeamPortalMonthlyReports() {
   const [loadingReports, setLoadingReports] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterTeam, setFilterTeam] = useState("");
   const [editingReport, setEditingReport] = useState<MonthlyReport | null>(null);
 
   const [formData, setFormData] = useState({
     teamId: "",
     month: new Date().toISOString().slice(0, 7),
-    summary: "",
-    achievements: "",
-    challenges: "",
-    goalsNextMonth: "",
-    totalHours: "",
-    tasksCompleted: "",
+    note: "",
   });
+
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchTeams = useCallback(() => {
     if (!token) return;
@@ -119,31 +146,40 @@ export default function TeamPortalMonthlyReports() {
     setFormData({
       teamId: "",
       month: new Date().toISOString().slice(0, 7),
-      summary: "",
-      achievements: "",
-      challenges: "",
-      goalsNextMonth: "",
-      totalHours: "",
-      tasksCompleted: "",
+      note: "",
     });
+    setPdfFile(null);
     setEditingReport(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !formData.summary.trim()) return;
+    if (!token) return;
+    if (!pdfFile && !formData.note.trim()) return;
+
     setSubmitting(true);
     try {
+      let pdfUrl: string | undefined;
+
+      if (pdfFile) {
+        setPdfUploading(true);
+        try {
+          pdfUrl = await uploadFile(pdfFile, token);
+        } finally {
+          setPdfUploading(false);
+        }
+      }
+
       const body: any = {
         teamId: formData.teamId || undefined,
         month: formData.month,
-        summary: formData.summary,
-        achievements: formData.achievements || undefined,
-        challenges: formData.challenges || undefined,
-        goalsNextMonth: formData.goalsNextMonth || undefined,
-        totalHours: formData.totalHours ? parseFloat(formData.totalHours) : undefined,
-        tasksCompleted: formData.tasksCompleted ? parseInt(formData.tasksCompleted) : undefined,
+        summary: formData.note.trim() || "",
       };
+
+      if (pdfUrl) {
+        body.pdfUrl = pdfUrl;
+      }
 
       const url = editingReport
         ? `/api/team-portal/monthly-reports/${editingReport.id}`
@@ -187,14 +223,26 @@ export default function TeamPortalMonthlyReports() {
     setFormData({
       teamId: report.teamId || "",
       month: report.month || "",
-      summary: report.summary || "",
-      achievements: report.achievements || "",
-      challenges: report.challenges || "",
-      goalsNextMonth: report.goalsNextMonth || "",
-      totalHours: report.totalHours?.toString() || "",
-      tasksCompleted: report.tasksCompleted?.toString() || "",
+      note: report.summary || "",
     });
+    setPdfFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setShowForm(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setPdfFile(null);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      alert("File size must be under 10MB");
+      e.target.value = "";
+      setPdfFile(null);
+      return;
+    }
+    setPdfFile(file);
   };
 
   if (isLoading) {
@@ -229,6 +277,12 @@ export default function TeamPortalMonthlyReports() {
     const date = new Date(parseInt(year), parseInt(month) - 1);
     return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   };
+
+  const availableTeams = isFullAccess
+    ? teams
+    : teams.filter((t) => user.accessTeams.includes(t.id));
+
+  const canSubmit = !submitting && (!!pdfFile || formData.note.trim().length > 0);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
@@ -276,10 +330,10 @@ export default function TeamPortalMonthlyReports() {
             <div className="flex items-center gap-3">
               <button
                 className="md:hidden p-1.5 rounded-lg hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                onClick={() => setMobileMenuOpen(true)}
                 data-testid="button-mobile-menu"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Menu className="w-5 h-5" />
               </button>
               <h2 className="text-lg font-semibold text-gray-900 md:hidden">Team Portal</h2>
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">Monthly Reports</h2>
@@ -311,29 +365,36 @@ export default function TeamPortalMonthlyReports() {
         </header>
 
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 space-y-1">
-            {visibleNav.map((item) => {
-              const isActive = item.path === "/team-portal/monthly-reports";
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    setLocation(item.path);
-                    setMobileMenuOpen(false);
-                  }}
-                  data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-[#C41E3A]/10 text-[#C41E3A]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+            <div className="fixed top-0 left-0 h-full w-72 bg-white z-50 md:hidden shadow-xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h1 className="text-lg font-bold text-[#C41E3A]">Team Portal</h1>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="button-close-menu">
+                  <X className="w-5 h-5" />
                 </button>
-              );
-            })}
-          </div>
+              </div>
+              <nav className="py-4 px-3 space-y-1">
+                {visibleNav.map((item) => {
+                  const isActive = item.path === "/team-portal/monthly-reports";
+                  return (
+                    <button key={item.path} onClick={() => { setLocation(item.path); setMobileMenuOpen(false); }}
+                      data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-[#C41E3A]/10 text-[#C41E3A]" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="absolute bottom-0 left-0 right-0 px-3 py-4 border-t border-gray-100">
+                <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-[#C41E3A]" data-testid="button-logout-offcanvas">
+                  <LogOut className="w-4 h-4" /> Logout
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <main className="p-4 md:p-6 pb-24 md:pb-6">
@@ -349,7 +410,7 @@ export default function TeamPortalMonthlyReports() {
                   Monthly Reports
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  Create and view monthly performance reports
+                  Upload and manage monthly performance reports
                 </p>
               </div>
               <Button
@@ -397,7 +458,7 @@ export default function TeamPortalMonthlyReports() {
                             data-testid="select-team"
                           >
                             <option value="">Select team...</option>
-                            {teams.map((t) => (
+                            {availableTeams.map((t) => (
                               <option key={t.id} value={t.id}>
                                 {t.name}
                               </option>
@@ -419,95 +480,65 @@ export default function TeamPortalMonthlyReports() {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Summary <span className="text-red-500">*</span>
+                          Attach File
                         </label>
-                        <textarea
-                          value={formData.summary}
-                          onChange={(e) => setFormData({ ...formData, summary: e.target.value })}
-                          rows={3}
-                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                          placeholder="Brief summary of the month's work..."
-                          required
-                          data-testid="textarea-summary"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Achievements</label>
-                          <textarea
-                            value={formData.achievements}
-                            onChange={(e) => setFormData({ ...formData, achievements: e.target.value })}
-                            rows={3}
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                            placeholder="Key achievements this month..."
-                            data-testid="textarea-achievements"
-                          />
+                        <div className="flex items-center gap-3">
+                          <label
+                            className="flex items-center gap-2 px-4 py-2 rounded-md border border-gray-300 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors"
+                            data-testid="label-file-upload"
+                          >
+                            <Upload className="w-4 h-4" />
+                            Choose File
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept={ACCEPTED_TYPES}
+                              onChange={handleFileChange}
+                              className="hidden"
+                              data-testid="input-file-upload"
+                            />
+                          </label>
+                          {pdfFile && (
+                            <span className="flex items-center gap-1 text-sm text-gray-600">
+                              <Paperclip className="w-3 h-3" />
+                              {pdfFile.name}
+                            </span>
+                          )}
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Challenges</label>
-                          <textarea
-                            value={formData.challenges}
-                            onChange={(e) => setFormData({ ...formData, challenges: e.target.value })}
-                            rows={3}
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                            placeholder="Challenges faced this month..."
-                            data-testid="textarea-challenges"
-                          />
-                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          PDF, ZIP, Word (.doc, .docx) - Max 10MB
+                        </p>
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Goals for Next Month</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Note (optional)
+                        </label>
                         <textarea
-                          value={formData.goalsNextMonth}
-                          onChange={(e) => setFormData({ ...formData, goalsNextMonth: e.target.value })}
+                          value={formData.note}
+                          onChange={(e) => setFormData({ ...formData, note: e.target.value })}
                           rows={3}
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                          placeholder="Goals and plans for next month..."
-                          data-testid="textarea-goals"
+                          placeholder="Add a note about this report..."
+                          data-testid="textarea-note"
                         />
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Total Hours</label>
-                          <input
-                            type="number"
-                            value={formData.totalHours}
-                            onChange={(e) => setFormData({ ...formData, totalHours: e.target.value })}
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                            placeholder="e.g. 160"
-                            min="0"
-                            step="0.5"
-                            data-testid="input-total-hours"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Tasks Completed</label>
-                          <input
-                            type="number"
-                            value={formData.tasksCompleted}
-                            onChange={(e) => setFormData({ ...formData, tasksCompleted: e.target.value })}
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                            placeholder="e.g. 25"
-                            min="0"
-                            data-testid="input-tasks-completed"
-                          />
-                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3 pt-2">
                         <Button
                           type="submit"
-                          disabled={submitting || !formData.summary.trim()}
+                          disabled={!canSubmit}
                           className="bg-[#C41E3A] hover:bg-[#A3182F] text-white"
                           data-testid="button-submit-report"
                         >
                           {submitting ? (
                             <Loader2 className="w-4 h-4 animate-spin mr-2" />
                           ) : null}
-                          {editingReport ? "Update Report" : "Submit Report"}
+                          {pdfUploading
+                            ? "Uploading..."
+                            : editingReport
+                            ? "Update Report"
+                            : "Submit Report"}
                         </Button>
                         <Button
                           type="button"
@@ -564,136 +595,76 @@ export default function TeamPortalMonthlyReports() {
           ) : (
             <div className="space-y-3">
               {filteredReports.map((report, index) => {
-                const isExpanded = expandedId === report.id;
                 const canModify = isFullAccess || report.employeeId === user.id;
                 return (
                   <motion.div
                     key={report.id}
-                    initial={{ opacity: 0, y: 15 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                    transition={{ delay: index * 0.05 }}
                   >
                     <Card data-testid={`card-report-${report.id}`}>
                       <CardContent className="p-4">
-                        <div
-                          className="flex items-start justify-between gap-3 cursor-pointer"
-                          onClick={() => setExpandedId(isExpanded ? null : report.id)}
-                          data-testid={`button-expand-${report.id}`}
-                        >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="font-semibold text-gray-900" data-testid={`text-employee-${report.id}`}>
+                              <span className="font-medium text-gray-900" data-testid={`text-employee-name-${report.id}`}>
                                 {report.employeeName}
                               </span>
                               {report.teamName && (
-                                <span className="text-xs bg-[#C41E3A]/10 text-[#C41E3A] px-2 py-0.5 rounded-md font-medium">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#C41E3A]/10 text-[#C41E3A]" data-testid={`badge-team-${report.id}`}>
                                   {report.teamName}
                                 </span>
                               )}
-                              <span className="text-xs text-gray-400">
+                              <span className="text-sm text-gray-500" data-testid={`text-month-${report.id}`}>
                                 {formatMonth(report.month)}
                               </span>
                             </div>
-                            <p className="text-sm text-gray-600 line-clamp-2" data-testid={`text-summary-${report.id}`}>
-                              {report.summary}
-                            </p>
-                            {(report.totalHours || report.tasksCompleted) && (
-                              <div className="flex flex-wrap items-center gap-3 mt-2">
-                                {report.totalHours != null && (
-                                  <span className="text-xs text-gray-500">
-                                    {report.totalHours}h worked
-                                  </span>
-                                )}
-                                {report.tasksCompleted != null && (
-                                  <span className="text-xs text-gray-500">
-                                    {report.tasksCompleted} tasks done
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {canModify && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleEdit(report);
-                                  }}
-                                  data-testid={`button-edit-${report.id}`}
-                                >
-                                  <Pencil className="w-4 h-4 text-gray-400" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDelete(report.id);
-                                  }}
-                                  data-testid={`button-delete-${report.id}`}
-                                >
-                                  <Trash2 className="w-4 h-4 text-gray-400" />
-                                </Button>
-                              </>
-                            )}
-                            {isExpanded ? (
-                              <ChevronUp className="w-5 h-5 text-gray-400" />
-                            ) : (
-                              <ChevronDown className="w-5 h-5 text-gray-400" />
-                            )}
-                          </div>
-                        </div>
 
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                                {report.achievements && (
-                                  <div data-testid={`text-achievements-${report.id}`}>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Achievements
-                                    </p>
-                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                                      {report.achievements}
-                                    </p>
-                                  </div>
-                                )}
-                                {report.challenges && (
-                                  <div data-testid={`text-challenges-${report.id}`}>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Challenges
-                                    </p>
-                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                                      {report.challenges}
-                                    </p>
-                                  </div>
-                                )}
-                                {report.goalsNextMonth && (
-                                  <div data-testid={`text-goals-${report.id}`}>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Goals for Next Month
-                                    </p>
-                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                                      {report.goalsNextMonth}
-                                    </p>
-                                  </div>
-                                )}
-                                {!report.achievements && !report.challenges && !report.goalsNextMonth && (
-                                  <p className="text-sm text-gray-400 italic">No additional details</p>
-                                )}
+                            {report.pdfUrl && (
+                              <div className="mt-2">
+                                <a
+                                  href={report.pdfUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-sm text-[#C41E3A] hover:underline"
+                                  data-testid={`link-attachment-${report.id}`}
+                                >
+                                  <Paperclip className="w-3.5 h-3.5" />
+                                  View Attachment
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
                               </div>
-                            </motion.div>
+                            )}
+
+                            {report.summary && (
+                              <p className="mt-2 text-sm text-gray-600" data-testid={`text-note-${report.id}`}>
+                                {report.summary}
+                              </p>
+                            )}
+                          </div>
+
+                          {canModify && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEdit(report)}
+                                data-testid={`button-edit-${report.id}`}
+                              >
+                                <Pencil className="w-4 h-4 text-gray-500" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(report.id)}
+                                data-testid={`button-delete-${report.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </div>
                           )}
-                        </AnimatePresence>
+                        </div>
                       </CardContent>
                     </Card>
                   </motion.div>

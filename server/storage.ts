@@ -206,7 +206,7 @@ export interface IStorage {
   updateWeeklyReport(id: string, data: any): Promise<WeeklyReport | undefined>;
   deleteWeeklyReport(id: string): Promise<boolean>;
 
-  createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number }): Promise<MonthlyReport>;
+  createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary?: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number; pdfUrl?: string }): Promise<MonthlyReport>;
   getMonthlyReports(teamId?: string, employeeId?: string): Promise<MonthlyReport[]>;
   getMonthlyReportById(id: string): Promise<MonthlyReport | undefined>;
   updateMonthlyReport(id: string, data: any): Promise<MonthlyReport | undefined>;
@@ -1685,19 +1685,20 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number }): Promise<MonthlyReport> {
+  async createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary?: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number; pdfUrl?: string }): Promise<MonthlyReport> {
     const id = randomUUID();
     await db.insert(monthlyReports).values({
       id,
       employeeId: data.employeeId,
       teamId: data.teamId,
       month: data.month,
-      summary: data.summary,
+      summary: data.summary ?? null,
       achievements: data.achievements ?? null,
       challenges: data.challenges ?? null,
       goalsNextMonth: data.goalsNextMonth ?? null,
       totalHours: data.totalHours ?? null,
       tasksCompleted: data.tasksCompleted ?? null,
+      pdfUrl: data.pdfUrl ?? null,
     });
     const [created] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));
     return created;
@@ -1730,6 +1731,7 @@ export class DatabaseStorage implements IStorage {
     if (data.goalsNextMonth !== undefined) updateData.goalsNextMonth = data.goalsNextMonth;
     if (data.totalHours !== undefined) updateData.totalHours = data.totalHours;
     if (data.tasksCompleted !== undefined) updateData.tasksCompleted = data.tasksCompleted;
+    if (data.pdfUrl !== undefined) updateData.pdfUrl = data.pdfUrl;
     updateData.updatedAt = new Date();
     await db.update(monthlyReports).set(updateData).where(eq(monthlyReports.id, id));
     const [updated] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));

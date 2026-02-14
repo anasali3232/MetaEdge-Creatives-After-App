@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { useLocation } from "wouter";
+import html2canvas from "html2canvas";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -22,14 +23,15 @@ import {
   Activity,
   FileText,
   Camera,
-  Monitor,
-  MonitorOff,
   ArrowUp,
   ArrowDown,
   Coffee,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useTeamAuth } from "@/hooks/use-team-auth";
 
 interface DashboardData {
@@ -128,7 +130,7 @@ function BarChart({ data, maxHours }: { data: { label: string; hours: number }[]
 }
 
 export default function TeamPortalDashboard() {
-  const { token, user, isLoading, logout, isFullAccess } = useTeamAuth();
+  const { token, user, isLoading, logout, isFullAccess, refreshUser } = useTeamAuth();
   const [, setLocation] = useLocation();
   const [dashData, setDashData] = useState<DashboardData | null>(null);
   const [clockLoading, setClockLoading] = useState(false);
@@ -145,8 +147,12 @@ export default function TeamPortalDashboard() {
   const [heartbeats, setHeartbeats] = useState<HeartbeatData[]>([]);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   const heartbeatsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", designation: "", description: "", avatarUrl: "" });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const fetchDashboard = useCallback(() => {
     if (!token) return;
@@ -264,38 +270,19 @@ export default function TeamPortalDashboard() {
         clearInterval(screenshotIntervalRef.current);
         screenshotIntervalRef.current = null;
       }
-      if (!screenshotEnabled && mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
-      }
       return;
     }
 
     const captureAndUpload = async () => {
       try {
-        let stream = mediaStreamRef.current;
-        if (!stream || !stream.active) {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-          });
-          mediaStreamRef.current = stream;
-        }
-
-        const track = stream.getVideoTracks()[0];
-        if (!track) return;
-
-        const imageCapture = new (window as any).ImageCapture(track);
-        const bitmap = await imageCapture.grabFrame();
-
-        const canvas = document.createElement("canvas");
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(bitmap, 0, 0);
-
-        const base64String = canvas.toDataURL("image/jpeg", 0.7);
-
+        const canvas = await html2canvas(document.body, {
+          scale: 0.5,
+          useCORS: true,
+          logging: false,
+          windowWidth: document.documentElement.scrollWidth,
+          windowHeight: document.documentElement.scrollHeight,
+        });
+        const base64String = canvas.toDataURL("image/jpeg", 0.5);
         await fetch("/api/team-portal/screenshots", {
           method: "POST",
           headers: {
@@ -304,8 +291,7 @@ export default function TeamPortalDashboard() {
           },
           body: JSON.stringify({ imageData: base64String }),
         }).catch(() => {});
-      } catch {
-      }
+      } catch {}
     };
 
     captureAndUpload();
@@ -315,10 +301,6 @@ export default function TeamPortalDashboard() {
       if (screenshotIntervalRef.current) {
         clearInterval(screenshotIntervalRef.current);
         screenshotIntervalRef.current = null;
-      }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
       }
     };
   }, [token, screenshotEnabled]);
@@ -431,6 +413,53 @@ export default function TeamPortalDashboard() {
     };
   };
 
+  const openProfile = () => {
+    if (!user) return;
+    setProfileForm({
+      name: user.name || "",
+      designation: user.designation || "",
+      description: user.description || "",
+      avatarUrl: user.avatarUrl || "",
+    });
+    setAvatarFile(null);
+    setProfileOpen(true);
+  };
+
+  const uploadAvatar = async (file: File): Promise<string> => {
+    const metaRes = await fetch("/api/uploads/request-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+    });
+    if (!metaRes.ok) throw new Error("Failed to get upload URL");
+    const { uploadURL, objectPath } = await metaRes.json();
+    await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+    return objectPath;
+  };
+
+  const saveProfile = async () => {
+    if (!token) return;
+    setProfileSaving(true);
+    try {
+      let avatarUrl = profileForm.avatarUrl;
+      if (avatarFile) {
+        setAvatarUploading(true);
+        avatarUrl = await uploadAvatar(avatarFile);
+        setAvatarUploading(false);
+      }
+      const res = await fetch("/api/team-portal/me", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profileForm.name, designation: profileForm.designation || null, description: profileForm.description || null, avatarUrl: avatarUrl || null }),
+      });
+      if (res.ok) {
+        refreshUser();
+        setProfileOpen(false);
+      }
+    } catch {}
+    setProfileSaving(false);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -499,49 +528,28 @@ export default function TeamPortalDashboard() {
             <div className="flex items-center gap-3">
               <button
                 className="md:hidden p-1.5 rounded-lg hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                onClick={() => setMobileMenuOpen(true)}
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Menu className="w-5 h-5" />
               </button>
               <h2 className="text-lg font-semibold text-gray-900 md:hidden">Team Portal</h2>
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">Dashboard</h2>
             </div>
             <div className="flex items-center gap-3">
-              {dashData?.clockedIn && (
-                <div
-                  data-testid="status-screen-sharing"
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${
-                    onBreak
-                      ? "bg-amber-50 text-amber-700 border border-amber-200"
-                      : screenshotEnabled
-                        ? "bg-green-50 text-green-700 border border-green-200"
-                        : "bg-gray-50 text-gray-500 border border-gray-200"
-                  }`}
-                >
-                  {onBreak ? (
-                    <MonitorOff className="w-3.5 h-3.5" />
-                  ) : screenshotEnabled ? (
-                    <Monitor className="w-3.5 h-3.5" />
-                  ) : (
-                    <MonitorOff className="w-3.5 h-3.5" />
-                  )}
-                  <span className="hidden sm:inline">
-                    {onBreak ? "On Break" : screenshotEnabled ? "Sharing" : "Starting..."}
-                  </span>
-                </div>
-              )}
               <span className="text-sm text-gray-600 hidden sm:block">{user.name}</span>
-              {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt={user.name}
-                  className="w-8 h-8 rounded-full object-cover border-2 border-[#C41E3A]/20"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-[#C41E3A] text-white flex items-center justify-center text-xs font-bold">
-                  {initials}
-                </div>
-              )}
+              <button onClick={openProfile} className="rounded-full focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/40" data-testid="button-open-profile">
+                {user.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.name}
+                    className="w-8 h-8 rounded-full object-cover border-2 border-[#C41E3A]/20"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-[#C41E3A] text-white flex items-center justify-center text-xs font-bold">
+                    {initials}
+                  </div>
+                )}
+              </button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -555,28 +563,36 @@ export default function TeamPortalDashboard() {
         </header>
 
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 space-y-1">
-            {visibleNav.map((item) => {
-              const isActive = item.path === "/team-portal/dashboard";
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    setLocation(item.path);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-[#C41E3A]/10 text-[#C41E3A]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+            <div className="fixed top-0 left-0 h-full w-72 bg-white z-50 md:hidden shadow-xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h1 className="text-lg font-bold text-[#C41E3A]">Team Portal</h1>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="button-close-menu">
+                  <X className="w-5 h-5" />
                 </button>
-              );
-            })}
-          </div>
+              </div>
+              <nav className="py-4 px-3 space-y-1">
+                {visibleNav.map((item) => {
+                  const isActive = item.path === "/team-portal/dashboard";
+                  return (
+                    <button key={item.path} onClick={() => { setLocation(item.path); setMobileMenuOpen(false); }}
+                      data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-[#C41E3A]/10 text-[#C41E3A]" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="absolute bottom-0 left-0 right-0 px-3 py-4 border-t border-gray-100">
+                <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-[#C41E3A]" data-testid="button-logout-offcanvas">
+                  <LogOut className="w-4 h-4" /> Logout
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <main className="p-4 md:p-6 pb-24 md:pb-6">
@@ -1041,6 +1057,52 @@ export default function TeamPortalDashboard() {
           })}
         </div>
       </div>
+
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Profile</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                {(avatarFile ? URL.createObjectURL(avatarFile) : profileForm.avatarUrl) ? (
+                  <img src={avatarFile ? URL.createObjectURL(avatarFile) : profileForm.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-gray-200" />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-[#C41E3A] text-white flex items-center justify-center text-lg font-bold">
+                    {profileForm.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="cursor-pointer text-sm text-[#C41E3A] hover:underline font-medium">
+                  Change Photo
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setAvatarFile(f); }} data-testid="input-avatar-file" />
+                </label>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <Input value={profileForm.name} onChange={(e) => setProfileForm({...profileForm, name: e.target.value})} data-testid="input-profile-name" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
+              <Input value={profileForm.designation} onChange={(e) => setProfileForm({...profileForm, designation: e.target.value})} placeholder="e.g. Senior Developer" data-testid="input-profile-designation" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <Textarea value={profileForm.description} onChange={(e) => setProfileForm({...profileForm, description: e.target.value})} placeholder="Brief description about yourself" rows={3} data-testid="textarea-profile-description" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setProfileOpen(false)}>Cancel</Button>
+            <Button onClick={saveProfile} disabled={profileSaving || !profileForm.name.trim()} className="bg-[#C41E3A] hover:bg-[#A3182F] text-white" data-testid="button-save-profile">
+              {profileSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

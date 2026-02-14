@@ -22,8 +22,6 @@ import {
   Camera,
   BarChart3,
   Coffee,
-  Monitor,
-  MonitorOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,10 +131,6 @@ export default function TeamPortalTimesheet() {
   const [breakElapsed, setBreakElapsed] = useState(0);
   const breakStartRef = useRef<number | null>(null);
   const breakTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [screenshotEnabled, setScreenshotEnabled] = useState(false);
-  const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [entries, setEntries] = useState<ClockEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -233,60 +227,6 @@ export default function TeamPortalTimesheet() {
     };
   }, [clockStatus, onBreak]);
 
-  useEffect(() => {
-    if (!token || !screenshotEnabled) {
-      if (screenshotIntervalRef.current) {
-        clearInterval(screenshotIntervalRef.current);
-        screenshotIntervalRef.current = null;
-      }
-      if (!screenshotEnabled && mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
-      }
-      return;
-    }
-
-    const captureAndUpload = async () => {
-      try {
-        let stream = mediaStreamRef.current;
-        if (!stream || !stream.active) {
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-          mediaStreamRef.current = stream;
-        }
-        const track = stream.getVideoTracks()[0];
-        if (!track) return;
-        const imageCapture = new (window as any).ImageCapture(track);
-        const bitmap = await imageCapture.grabFrame();
-        const canvas = document.createElement("canvas");
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(bitmap, 0, 0);
-        const base64String = canvas.toDataURL("image/jpeg", 0.7);
-        await fetch("/api/team-portal/screenshots", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ imageData: base64String }),
-        }).catch(() => {});
-      } catch {}
-    };
-
-    captureAndUpload();
-    screenshotIntervalRef.current = setInterval(captureAndUpload, 10 * 60 * 1000);
-
-    return () => {
-      if (screenshotIntervalRef.current) {
-        clearInterval(screenshotIntervalRef.current);
-        screenshotIntervalRef.current = null;
-      }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
-      }
-    };
-  }, [token, screenshotEnabled]);
-
   const handleClockIn = async () => {
     if (!token) return;
     setClockLoading(true);
@@ -300,7 +240,6 @@ export default function TeamPortalTimesheet() {
         body: JSON.stringify({ notes: clockNotes || undefined }),
       });
       setClockNotes("");
-      setScreenshotEnabled(true);
       setOnBreak(false);
       setBreakElapsed(0);
       breakStartRef.current = null;
@@ -318,7 +257,6 @@ export default function TeamPortalTimesheet() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-      setScreenshotEnabled(false);
       setOnBreak(false);
       setBreakElapsed(0);
       breakStartRef.current = null;
@@ -343,7 +281,6 @@ export default function TeamPortalTimesheet() {
 
   const handleTakeBreak = () => {
     setOnBreak(true);
-    setScreenshotEnabled(false);
     breakStartRef.current = Date.now();
     setBreakElapsed(0);
     if (breakTimerRef.current) clearInterval(breakTimerRef.current);
@@ -356,7 +293,6 @@ export default function TeamPortalTimesheet() {
 
   const handleResumeWork = () => {
     setOnBreak(false);
-    setScreenshotEnabled(true);
     breakStartRef.current = null;
     setBreakElapsed(0);
     if (breakTimerRef.current) {
@@ -462,9 +398,9 @@ export default function TeamPortalTimesheet() {
             <div className="flex items-center gap-3">
               <button
                 className="md:hidden p-1.5 rounded-lg hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                onClick={() => setMobileMenuOpen(true)}
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Menu className="w-5 h-5" />
               </button>
               <h2 className="text-lg font-semibold text-gray-900 md:hidden">Team Portal</h2>
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">My Time</h2>
@@ -495,28 +431,36 @@ export default function TeamPortalTimesheet() {
         </header>
 
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 space-y-1">
-            {visibleNav.map((item) => {
-              const isActive = item.path === "/team-portal/timesheet";
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    setLocation(item.path);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-[#C41E3A]/10 text-[#C41E3A]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+            <div className="fixed top-0 left-0 h-full w-72 bg-white z-50 md:hidden shadow-xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h1 className="text-lg font-bold text-[#C41E3A]">Team Portal</h1>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="button-close-menu">
+                  <X className="w-5 h-5" />
                 </button>
-              );
-            })}
-          </div>
+              </div>
+              <nav className="py-4 px-3 space-y-1">
+                {visibleNav.map((item) => {
+                  const isActive = item.path === "/team-portal/timesheet";
+                  return (
+                    <button key={item.path} onClick={() => { setLocation(item.path); setMobileMenuOpen(false); }}
+                      data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-[#C41E3A]/10 text-[#C41E3A]" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="absolute bottom-0 left-0 right-0 px-3 py-4 border-t border-gray-100">
+                <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-[#C41E3A]" data-testid="button-logout-offcanvas">
+                  <LogOut className="w-4 h-4" /> Logout
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <main className="p-4 md:p-6 pb-24 md:pb-6">
@@ -538,31 +482,9 @@ export default function TeamPortalTimesheet() {
           >
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-500 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
                     <Timer className="w-4 h-4 text-[#C41E3A]" />
                     Clock In / Out
-                  </div>
-                  {clockStatus?.clockedIn && (
-                    <div
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${
-                        onBreak
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : screenshotEnabled
-                            ? "bg-green-50 text-green-700 border border-green-200"
-                            : "bg-gray-50 text-gray-500 border border-gray-200"
-                      }`}
-                    >
-                      {onBreak ? (
-                        <MonitorOff className="w-3.5 h-3.5" />
-                      ) : screenshotEnabled ? (
-                        <Monitor className="w-3.5 h-3.5" />
-                      ) : (
-                        <MonitorOff className="w-3.5 h-3.5" />
-                      )}
-                      {onBreak ? "On Break" : screenshotEnabled ? "Screen Sharing" : "Starting..."}
-                    </div>
-                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>

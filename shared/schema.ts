@@ -405,6 +405,7 @@ export const employees = mysqlTable("employees", {
   passwordHash: text("password_hash").notNull(),
   role: varchar("role", { length: 100 }).default("employee").notNull(),
   designation: text("designation"),
+  description: text("description"),
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
   accessLevel: varchar("access_level", { length: 50 }).default("team_only").notNull(),
@@ -428,12 +429,20 @@ export const updateEmployeeSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   designation: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   role: z.string().optional(),
   accessLevel: z.enum(["full", "multi_team", "team_only"]).optional(),
   accessTeams: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(6).optional(),
+});
+
+export const selfUpdateEmployeeSchema = z.object({
+  name: z.string().min(1).optional(),
+  designation: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  avatarUrl: z.string().optional().nullable(),
 });
 
 export type Employee = typeof employees.$inferSelect;
@@ -570,12 +579,13 @@ export const monthlyReports = mysqlTable("monthly_reports", {
   employeeId: varchar("employee_id", { length: 36 }).notNull(),
   teamId: varchar("team_id", { length: 36 }).notNull(),
   month: varchar("month", { length: 7 }).notNull(),
-  summary: text("summary").notNull(),
+  summary: text("summary"),
   achievements: text("achievements"),
   challenges: text("challenges"),
   goalsNextMonth: text("goals_next_month"),
   totalHours: int("total_hours"),
   tasksCompleted: int("tasks_completed"),
+  pdfUrl: text("pdf_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

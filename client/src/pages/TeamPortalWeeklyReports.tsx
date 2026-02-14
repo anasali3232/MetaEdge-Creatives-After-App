@@ -17,11 +17,8 @@ import {
   BarChart3,
   Camera,
   Plus,
-  ChevronDown,
-  ChevronUp,
   Pencil,
   Trash2,
-  Upload,
   Paperclip,
   ExternalLink,
 } from "lucide-react";
@@ -50,7 +47,7 @@ interface WeeklyReport {
   createdAt: string;
 }
 
-async function uploadPdfFile(file: File, token: string): Promise<string> {
+async function uploadFile(file: File, token: string): Promise<string> {
   const metaRes = await fetch("/api/uploads/request-url", {
     method: "POST",
     headers: {
@@ -60,7 +57,7 @@ async function uploadPdfFile(file: File, token: string): Promise<string> {
     body: JSON.stringify({
       name: file.name,
       size: file.size,
-      contentType: file.type || "application/pdf",
+      contentType: file.type || "application/octet-stream",
     }),
   });
   if (!metaRes.ok) {
@@ -71,7 +68,7 @@ async function uploadPdfFile(file: File, token: string): Promise<string> {
   const uploadRes = await fetch(uploadURL, {
     method: "PUT",
     body: file,
-    headers: { "Content-Type": file.type || "application/pdf" },
+    headers: { "Content-Type": file.type || "application/octet-stream" },
   });
   if (!uploadRes.ok) {
     throw new Error("Failed to upload file");
@@ -109,22 +106,18 @@ export default function TeamPortalWeeklyReports() {
   const [reports, setReports] = useState<WeeklyReport[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [filterTeam, setFilterTeam] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [editingReport, setEditingReport] = useState<WeeklyReport | null>(null);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [pdfUploading, setPdfUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileUploading, setFileUploading] = useState(false);
   const [filterWeek, setFilterWeek] = useState("");
   const [formData, setFormData] = useState({
     teamId: "",
     weekStart: "",
     weekEnd: "",
-    accomplishments: "",
-    challenges: "",
-    nextWeekPlan: "",
-    hoursWorked: "",
+    note: "",
   });
 
   const fetchTeams = useCallback(() => {
@@ -158,17 +151,20 @@ export default function TeamPortalWeeklyReports() {
     fetchReports();
   }, [fetchTeams, fetchReports]);
 
+  const availableTeams = useMemo(() => {
+    if (isFullAccess) return teams;
+    if (!user) return [];
+    return teams.filter((t) => user.accessTeams.includes(t.id));
+  }, [teams, user, isFullAccess]);
+
   const resetForm = () => {
     setFormData({
       teamId: "",
       weekStart: "",
       weekEnd: "",
-      accomplishments: "",
-      challenges: "",
-      nextWeekPlan: "",
-      hoursWorked: "",
+      note: "",
     });
-    setPdfFile(null);
+    setSelectedFile(null);
     setEditingReport(null);
     setShowForm(false);
   };
@@ -179,10 +175,7 @@ export default function TeamPortalWeeklyReports() {
       teamId: report.teamId,
       weekStart: report.weekStart,
       weekEnd: report.weekEnd,
-      accomplishments: report.accomplishments,
-      challenges: report.challenges || "",
-      nextWeekPlan: report.nextWeekPlan || "",
-      hoursWorked: report.hoursWorked != null ? String(report.hoursWorked) : "",
+      note: report.accomplishments || "",
     });
     setShowForm(true);
   };
@@ -200,18 +193,19 @@ export default function TeamPortalWeeklyReports() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !formData.accomplishments.trim()) return;
+    if (!token) return;
+    if (!selectedFile && !formData.note.trim()) return;
     setFormLoading(true);
     try {
-      let uploadedPdfUrl: string | undefined;
-      if (pdfFile) {
-        setPdfUploading(true);
+      let uploadedFileUrl: string | undefined;
+      if (selectedFile) {
+        setFileUploading(true);
         try {
-          uploadedPdfUrl = await uploadPdfFile(pdfFile, token);
+          uploadedFileUrl = await uploadFile(selectedFile, token);
         } catch {
-          setPdfUploading(false);
+          setFileUploading(false);
         }
-        setPdfUploading(false);
+        setFileUploading(false);
       }
       const url = editingReport
         ? `/api/team-portal/weekly-reports/${editingReport.id}`
@@ -221,11 +215,8 @@ export default function TeamPortalWeeklyReports() {
         teamId: formData.teamId || undefined,
         weekStart: formData.weekStart,
         weekEnd: formData.weekEnd,
-        accomplishments: formData.accomplishments,
-        challenges: formData.challenges || undefined,
-        nextWeekPlan: formData.nextWeekPlan || undefined,
-        hoursWorked: formData.hoursWorked ? Number(formData.hoursWorked) : undefined,
-        pdfUrl: uploadedPdfUrl || undefined,
+        accomplishments: formData.note || "",
+        pdfUrl: uploadedFileUrl || undefined,
       };
       const res = await fetch(url, {
         method,
@@ -265,7 +256,7 @@ export default function TeamPortalWeeklyReports() {
     .toUpperCase()
     .slice(0, 2);
 
-  const availableWeeks = useMemo(() => {
+  const availableWeeks = (() => {
     const weekSet = new Map<string, string>();
     reports.forEach((r) => {
       if (r.weekStart && !weekSet.has(r.weekStart)) {
@@ -274,8 +265,8 @@ export default function TeamPortalWeeklyReports() {
     });
     return Array.from(weekSet.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([value, label]) => ({ value, label }));
-  }, [reports]);
+      .map(([value]) => ({ value, label: getWeekLabel(value) }));
+  })();
 
   const filteredReports = reports
     .filter((r) => !filterTeam || r.teamId === filterTeam)
@@ -283,6 +274,17 @@ export default function TeamPortalWeeklyReports() {
 
   const canModify = (report: WeeklyReport) =>
     isFullAccess || report.employeeId === user.id;
+
+  const canSubmit = !!selectedFile || formData.note.trim().length > 0;
+
+  const getFileName = (url: string) => {
+    try {
+      const parts = url.split("/");
+      return decodeURIComponent(parts[parts.length - 1]) || "Attachment";
+    } catch {
+      return "Attachment";
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
@@ -330,10 +332,10 @@ export default function TeamPortalWeeklyReports() {
             <div className="flex items-center gap-3">
               <button
                 className="md:hidden p-1.5 rounded-lg hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                onClick={() => setMobileMenuOpen(true)}
                 data-testid="button-mobile-menu"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Menu className="w-5 h-5" />
               </button>
               <h2 className="text-lg font-semibold text-gray-900 md:hidden">Team Portal</h2>
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">Weekly Reports</h2>
@@ -365,29 +367,36 @@ export default function TeamPortalWeeklyReports() {
         </header>
 
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 space-y-1">
-            {visibleNav.map((item) => {
-              const isActive = item.path === "/team-portal/weekly-reports";
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    setLocation(item.path);
-                    setMobileMenuOpen(false);
-                  }}
-                  data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-[#C41E3A]/10 text-[#C41E3A]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+            <div className="fixed top-0 left-0 h-full w-72 bg-white z-50 md:hidden shadow-xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h1 className="text-lg font-bold text-[#C41E3A]">Team Portal</h1>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="button-close-menu">
+                  <X className="w-5 h-5" />
                 </button>
-              );
-            })}
-          </div>
+              </div>
+              <nav className="py-4 px-3 space-y-1">
+                {visibleNav.map((item) => {
+                  const isActive = item.path === "/team-portal/weekly-reports";
+                  return (
+                    <button key={item.path} onClick={() => { setLocation(item.path); setMobileMenuOpen(false); }}
+                      data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-[#C41E3A]/10 text-[#C41E3A]" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="absolute bottom-0 left-0 right-0 px-3 py-4 border-t border-gray-100">
+                <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-[#C41E3A]" data-testid="button-logout-offcanvas">
+                  <LogOut className="w-4 h-4" /> Logout
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <main className="p-4 md:p-6 pb-24 md:pb-6">
@@ -433,7 +442,7 @@ export default function TeamPortalWeeklyReports() {
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
                           <select
@@ -443,7 +452,7 @@ export default function TeamPortalWeeklyReports() {
                             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
                           >
                             <option value="">Select team...</option>
-                            {teams.map((t) => (
+                            {availableTeams.map((t) => (
                               <option key={t.id} value={t.id}>
                                 {t.name}
                               </option>
@@ -472,96 +481,45 @@ export default function TeamPortalWeeklyReports() {
                             required
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Hours Worked</label>
-                          <input
-                            type="number"
-                            value={formData.hoursWorked}
-                            onChange={(e) => setFormData({ ...formData, hoursWorked: e.target.value })}
-                            data-testid="input-hours-worked"
-                            placeholder="e.g. 40"
-                            min="0"
-                            step="0.5"
-                            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A]"
-                          />
-                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Accomplishments <span className="text-[#C41E3A]">*</span>
-                        </label>
-                        <textarea
-                          value={formData.accomplishments}
-                          onChange={(e) => setFormData({ ...formData, accomplishments: e.target.value })}
-                          data-testid="textarea-accomplishments"
-                          rows={3}
-                          required
-                          placeholder="What did you accomplish this week?"
-                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A] resize-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Challenges</label>
-                        <textarea
-                          value={formData.challenges}
-                          onChange={(e) => setFormData({ ...formData, challenges: e.target.value })}
-                          data-testid="textarea-challenges"
-                          rows={2}
-                          placeholder="Any challenges or blockers?"
-                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A] resize-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Next Week Plan</label>
-                        <textarea
-                          value={formData.nextWeekPlan}
-                          onChange={(e) => setFormData({ ...formData, nextWeekPlan: e.target.value })}
-                          data-testid="textarea-next-week-plan"
-                          rows={2}
-                          placeholder="What's planned for next week?"
-                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A] resize-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Attach PDF (optional)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Attach File (optional)</label>
+                        <p className="text-xs text-gray-400 mb-2">PDF, ZIP, or Word (.pdf, .zip, .doc, .docx) — max 10MB</p>
                         <div className="flex items-center gap-3 flex-wrap">
                           <label
                             className="flex items-center gap-2 px-4 py-2 border border-dashed border-gray-300 rounded-md cursor-pointer text-sm text-gray-600 hover:border-[#C41E3A] hover:text-[#C41E3A] transition-colors"
-                            data-testid="label-pdf-upload"
+                            data-testid="label-file-upload"
                           >
-                            <Upload className="w-4 h-4" />
-                            {pdfFile ? pdfFile.name : "Choose PDF file"}
+                            <Paperclip className="w-4 h-4" />
+                            {selectedFile ? selectedFile.name : "Choose file"}
                             <input
                               type="file"
-                              accept=".pdf"
+                              accept=".pdf,.zip,.doc,.docx"
                               className="hidden"
-                              data-testid="input-pdf-upload"
+                              data-testid="input-file-upload"
                               onChange={(e) => {
                                 const f = e.target.files?.[0];
                                 if (f && f.size > 10 * 1024 * 1024) {
                                   alert("File must be under 10MB");
                                   return;
                                 }
-                                setPdfFile(f || null);
+                                setSelectedFile(f || null);
                               }}
                             />
                           </label>
-                          {pdfFile && (
+                          {selectedFile && (
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => setPdfFile(null)}
-                              data-testid="button-remove-pdf"
+                              onClick={() => setSelectedFile(null)}
+                              data-testid="button-remove-file"
                             >
                               <X className="w-4 h-4" />
                             </Button>
                           )}
-                          {pdfUploading && (
+                          {fileUploading && (
                             <span className="text-xs text-gray-500 flex items-center gap-1">
                               <Loader2 className="w-3 h-3 animate-spin" /> Uploading...
                             </span>
@@ -569,10 +527,22 @@ export default function TeamPortalWeeklyReports() {
                         </div>
                       </div>
 
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+                        <textarea
+                          value={formData.note}
+                          onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                          data-testid="textarea-note"
+                          rows={3}
+                          placeholder="Add any notes or comments..."
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C41E3A]/50 focus:border-[#C41E3A] resize-none"
+                        />
+                      </div>
+
                       <div className="flex items-center gap-3 flex-wrap">
                         <Button
                           type="submit"
-                          disabled={formLoading || !formData.accomplishments.trim()}
+                          disabled={formLoading || !canSubmit}
                           data-testid="button-submit-report"
                           className="bg-[#C41E3A] hover:bg-[#A3182F] text-white"
                         >
@@ -627,7 +597,7 @@ export default function TeamPortalWeeklyReports() {
                 <option value="">All Weeks</option>
                 {availableWeeks.map((w) => (
                   <option key={w.value} value={w.value}>
-                    {getWeekLabel(w.value)}
+                    {w.label}
                   </option>
                 ))}
               </select>
@@ -653,160 +623,79 @@ export default function TeamPortalWeeklyReports() {
             </motion.div>
           ) : (
             <div className="space-y-3">
-              {filteredReports.map((report, index) => {
-                const isExpanded = expandedId === report.id;
-                return (
-                  <motion.div
-                    key={report.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.05 }}
-                  >
-                    <Card data-testid={`card-report-${report.id}`}>
-                      <CardContent className="p-4">
-                        <div
-                          className="flex items-start justify-between gap-3 cursor-pointer"
-                          onClick={() => setExpandedId(isExpanded ? null : report.id)}
-                          data-testid={`button-expand-report-${report.id}`}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-gray-900 text-sm" data-testid={`text-employee-name-${report.id}`}>
-                                {report.employeeName}
+              {filteredReports.map((report, index) => (
+                <motion.div
+                  key={report.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.05 }}
+                >
+                  <Card data-testid={`card-report-${report.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-gray-900 text-sm" data-testid={`text-employee-name-${report.id}`}>
+                              {report.employeeName}
+                            </span>
+                            {report.teamName && (
+                              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
+                                {report.teamName}
                               </span>
-                              {report.teamName && (
-                                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
-                                  {report.teamName}
-                                </span>
-                              )}
-                              {report.hoursWorked != null && (
-                                <span className="text-xs text-gray-500">
-                                  {report.hoursWorked}h
-                                </span>
-                              )}
-                              {report.pdfUrl && (
-                                <Paperclip className="w-3 h-3 text-[#C41E3A]" />
-                              )}
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {report.weekStart} — {report.weekEnd}
+                          </p>
+                          {report.pdfUrl && (
+                            <div className="mt-2">
+                              <a
+                                href={report.pdfUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 text-sm text-[#C41E3A] hover:underline"
+                                data-testid={`link-file-${report.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Paperclip className="w-4 h-4" />
+                                {getFileName(report.pdfUrl)}
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
                             </div>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {report.weekStart} — {report.weekEnd}
-                            </p>
-                            {!isExpanded && (
-                              <p className="text-sm text-gray-600 mt-1.5 line-clamp-2">
-                                {report.accomplishments}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {canModify(report) && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleEdit(report);
-                                  }}
-                                  data-testid={`button-edit-report-${report.id}`}
-                                >
-                                  <Pencil className="w-4 h-4 text-gray-400" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDelete(report.id);
-                                  }}
-                                  data-testid={`button-delete-report-${report.id}`}
-                                >
-                                  <Trash2 className="w-4 h-4 text-gray-400" />
-                                </Button>
-                              </>
-                            )}
-                            {isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-gray-400" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-gray-400" />
-                            )}
-                          </div>
-                        </div>
-
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="mt-4 pt-3 border-t border-gray-100 space-y-3">
-                                <div>
-                                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                    Accomplishments
-                                  </p>
-                                  <p className="text-sm text-gray-700 whitespace-pre-wrap" data-testid={`text-accomplishments-${report.id}`}>
-                                    {report.accomplishments}
-                                  </p>
-                                </div>
-                                {report.challenges && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Challenges
-                                    </p>
-                                    <p className="text-sm text-gray-700 whitespace-pre-wrap" data-testid={`text-challenges-${report.id}`}>
-                                      {report.challenges}
-                                    </p>
-                                  </div>
-                                )}
-                                {report.nextWeekPlan && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Next Week Plan
-                                    </p>
-                                    <p className="text-sm text-gray-700 whitespace-pre-wrap" data-testid={`text-next-week-plan-${report.id}`}>
-                                      {report.nextWeekPlan}
-                                    </p>
-                                  </div>
-                                )}
-                                {report.hoursWorked != null && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Hours Worked
-                                    </p>
-                                    <p className="text-sm text-gray-700" data-testid={`text-hours-${report.id}`}>
-                                      {report.hoursWorked} hours
-                                    </p>
-                                  </div>
-                                )}
-                                {report.pdfUrl && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                      Attached PDF
-                                    </p>
-                                    <a
-                                      href={report.pdfUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-2 text-sm text-[#C41E3A] hover:underline"
-                                      data-testid={`link-pdf-${report.id}`}
-                                    >
-                                      <Paperclip className="w-4 h-4" />
-                                      View PDF
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  </div>
-                                )}
-                              </div>
-                            </motion.div>
                           )}
-                        </AnimatePresence>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                );
-              })}
+                          {report.accomplishments && (
+                            <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap" data-testid={`text-note-${report.id}`}>
+                              {report.accomplishments}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {canModify(report) && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEdit(report)}
+                                data-testid={`button-edit-report-${report.id}`}
+                              >
+                                <Pencil className="w-4 h-4 text-gray-400" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(report.id)}
+                                data-testid={`button-delete-report-${report.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-gray-400" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
             </div>
           )}
         </main>

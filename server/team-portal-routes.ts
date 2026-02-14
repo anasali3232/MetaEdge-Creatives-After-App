@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
-import { insertEmployeeSchema, updateEmployeeSchema } from "@shared/schema";
+import { insertEmployeeSchema, updateEmployeeSchema, selfUpdateEmployeeSchema } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "./jwt-config";
@@ -114,6 +114,7 @@ export function registerTeamPortalRoutes(app: Express) {
           name: employee.name,
           role: employee.role,
           designation: employee.designation,
+          description: employee.description,
           accessLevel: employee.accessLevel,
           accessTeams: employee.accessLevel === "full" ? teamIds : accessTeams,
           avatarUrl: employee.avatarUrl,
@@ -138,12 +139,38 @@ export function registerTeamPortalRoutes(app: Express) {
         name: employee.name,
         role: employee.role,
         designation: employee.designation,
+        description: employee.description,
         accessLevel: employee.accessLevel,
         accessTeams: employee.accessLevel === "full" ? teamIds : (Array.isArray(employee.accessTeams) ? employee.accessTeams : []),
         avatarUrl: employee.avatarUrl,
       });
     } catch {
       res.status(500).json({ error: "Failed to fetch profile" });
+    }
+  });
+
+  app.patch("/api/team-portal/me", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const parsed = selfUpdateEmployeeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+      const updated = await storage.updateEmployee(req.employeeUser!.employeeId, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Employee not found" });
+      }
+      res.json({
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        designation: updated.designation,
+        description: updated.description,
+        accessLevel: updated.accessLevel,
+        avatarUrl: updated.avatarUrl,
+      });
+    } catch {
+      res.status(500).json({ error: "Failed to update profile" });
     }
   });
 
@@ -351,6 +378,9 @@ export function registerTeamPortalRoutes(app: Express) {
 
   app.post("/api/team-portal/tasks", employeeAuth, async (req: Request, res: Response) => {
     try {
+      if (!isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "Only admins with full access can create tasks" });
+      }
       const { title, description, teamId, assigneeId, priority, dueDate } = req.body;
       if (!title || !teamId) {
         return res.status(400).json({ error: "Title and team are required" });
@@ -394,6 +424,9 @@ export function registerTeamPortalRoutes(app: Express) {
 
   app.delete("/api/team-portal/tasks/:id", employeeAuth, async (req: Request, res: Response) => {
     try {
+      if (!isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "Only admins with full access can delete tasks" });
+      }
       const task = await storage.getTaskById(req.params.id as string);
       if (!task) return res.status(404).json({ error: "Task not found" });
       if (!canAccessTeam(req, task.teamId)) {
@@ -848,8 +881,11 @@ export function registerTeamPortalRoutes(app: Express) {
   app.post("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {
     try {
       const { teamId, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked, pdfUrl } = req.body;
-      if (!teamId || !weekStart || !weekEnd || !accomplishments) {
-        return res.status(400).json({ error: "teamId, weekStart, weekEnd, and accomplishments are required" });
+      if (!teamId || !weekStart || !weekEnd) {
+        return res.status(400).json({ error: "teamId, weekStart, and weekEnd are required" });
+      }
+      if (!pdfUrl && !accomplishments) {
+        return res.status(400).json({ error: "Please upload a file or add a note" });
       }
       const report = await storage.createWeeklyReport({
         employeeId: req.employeeUser!.employeeId,
@@ -940,20 +976,24 @@ export function registerTeamPortalRoutes(app: Express) {
 
   app.post("/api/team-portal/monthly-reports", employeeAuth, async (req: Request, res: Response) => {
     try {
-      const { teamId, month, summary, achievements, challenges, goalsNextMonth, totalHours, tasksCompleted } = req.body;
-      if (!teamId || !month || !summary) {
-        return res.status(400).json({ error: "teamId, month, and summary are required" });
+      const { teamId, month, summary, achievements, challenges, goalsNextMonth, totalHours, tasksCompleted, pdfUrl } = req.body;
+      if (!teamId || !month) {
+        return res.status(400).json({ error: "teamId and month are required" });
+      }
+      if (!pdfUrl && !summary) {
+        return res.status(400).json({ error: "Please upload a file or add a note" });
       }
       const report = await storage.createMonthlyReport({
         employeeId: req.employeeUser!.employeeId,
         teamId,
         month,
-        summary,
+        summary: summary || "",
         achievements,
         challenges,
         goalsNextMonth,
         totalHours,
         tasksCompleted,
+        pdfUrl,
       });
       res.json(report);
     } catch {

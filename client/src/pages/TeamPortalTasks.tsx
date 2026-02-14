@@ -355,9 +355,10 @@ export default function TeamPortalTasks() {
             <div className="flex items-center gap-3">
               <button
                 className="md:hidden p-1.5 rounded-lg hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                onClick={() => setMobileMenuOpen(true)}
+                data-testid="button-mobile-menu"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <Menu className="w-5 h-5" />
               </button>
               <h2 className="text-lg font-semibold text-gray-900 md:hidden">Team Portal</h2>
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">Tasks</h2>
@@ -388,28 +389,40 @@ export default function TeamPortalTasks() {
         </header>
 
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 space-y-1">
-            {visibleNav.map((item) => {
-              const isActive = item.path === "/team-portal/tasks";
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => {
-                    setLocation(item.path);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-[#C41E3A]/10 text-[#C41E3A]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+            <div className="fixed top-0 left-0 h-full w-72 bg-white z-50 md:hidden shadow-xl transform transition-transform duration-300">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h1 className="text-lg font-bold text-[#C41E3A]">Team Portal</h1>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="button-close-menu">
+                  <X className="w-5 h-5" />
                 </button>
-              );
-            })}
-          </div>
+              </div>
+              <nav className="py-4 px-3 space-y-1">
+                {visibleNav.map((item) => {
+                  const isActive = item.path === "/team-portal/tasks";
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => { setLocation(item.path); setMobileMenuOpen(false); }}
+                      data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        isActive ? "bg-[#C41E3A]/10 text-[#C41E3A]" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      }`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="absolute bottom-0 left-0 right-0 px-3 py-4 border-t border-gray-100">
+                <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-[#C41E3A]" data-testid="button-logout-offcanvas">
+                  <LogOut className="w-4 h-4" /> Logout
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <main className="p-4 md:p-6">
@@ -437,14 +450,16 @@ export default function TeamPortalTasks() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button
-                  onClick={() => setAddModalOpen(true)}
-                  className="bg-[#C41E3A] hover:bg-[#A3182F] text-white"
-                  disabled={!selectedTeamId}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Task
-                </Button>
+                {isFullAccess && (
+                  <Button
+                    onClick={() => setAddModalOpen(true)}
+                    className="bg-[#C41E3A] hover:bg-[#A3182F] text-white"
+                    disabled={!selectedTeamId}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Task
+                  </Button>
+                )}
               </div>
             </div>
           </motion.div>
@@ -489,15 +504,17 @@ export default function TeamPortalTasks() {
                                 <h5 className="text-sm font-medium text-gray-900 line-clamp-2 flex-1">
                                   {task.title}
                                 </h5>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteTask(task.id);
-                                  }}
-                                  className="text-gray-400 hover:text-red-500 transition-colors shrink-0"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {isFullAccess && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteTask(task.id);
+                                    }}
+                                    className="text-gray-400 hover:text-red-500 transition-colors shrink-0"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                               <div className="flex items-center gap-2 mb-2">
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.Medium}`}>
