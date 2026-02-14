@@ -526,3 +526,57 @@ export const personalNotes = mysqlTable("personal_notes", {
 });
 
 export type PersonalNote = typeof personalNotes.$inferSelect;
+
+export const activityHeartbeats = mysqlTable("activity_heartbeats", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  employeeId: varchar("employee_id", { length: 36 }).notNull(),
+  lastActive: timestamp("last_active").notNull(),
+  appName: varchar("app_name", { length: 255 }),
+  windowTitle: text("window_title"),
+});
+
+export type ActivityHeartbeat = typeof activityHeartbeats.$inferSelect;
+
+export const screenshots = mysqlTable("screenshots", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  employeeId: varchar("employee_id", { length: 36 }).notNull(),
+  imageData: text("image_data").notNull(),
+  appName: varchar("app_name", { length: 255 }),
+  windowTitle: text("window_title"),
+  capturedAt: timestamp("captured_at").defaultNow().notNull(),
+});
+
+export type Screenshot = typeof screenshots.$inferSelect;
+
+export const weeklyReports = mysqlTable("weekly_reports", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  employeeId: varchar("employee_id", { length: 36 }).notNull(),
+  teamId: varchar("team_id", { length: 36 }).notNull(),
+  weekStart: varchar("week_start", { length: 10 }).notNull(),
+  weekEnd: varchar("week_end", { length: 10 }).notNull(),
+  accomplishments: text("accomplishments").notNull(),
+  challenges: text("challenges"),
+  nextWeekPlan: text("next_week_plan"),
+  hoursWorked: int("hours_worked"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type WeeklyReport = typeof weeklyReports.$inferSelect;
+
+export const monthlyReports = mysqlTable("monthly_reports", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  employeeId: varchar("employee_id", { length: 36 }).notNull(),
+  teamId: varchar("team_id", { length: 36 }).notNull(),
+  month: varchar("month", { length: 7 }).notNull(),
+  summary: text("summary").notNull(),
+  achievements: text("achievements"),
+  challenges: text("challenges"),
+  goalsNextMonth: text("goals_next_month"),
+  totalHours: int("total_hours"),
+  tasksCompleted: int("tasks_completed"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type MonthlyReport = typeof monthlyReports.$inferSelect;
