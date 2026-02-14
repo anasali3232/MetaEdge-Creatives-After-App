@@ -18,6 +18,9 @@ import {
   Palette,
   Loader2,
   Menu,
+  FileText,
+  Camera,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +66,9 @@ const NAV_ITEMS = [
   { label: "My Time", icon: Clock, path: "/team-portal/timesheet", fullAccessOnly: false },
   { label: "Leaves", icon: CalendarDays, path: "/team-portal/leaves", fullAccessOnly: false },
   { label: "Notes", icon: StickyNote, path: "/team-portal/notes", fullAccessOnly: false },
+  { label: "Weekly Reports", icon: FileText, path: "/team-portal/weekly-reports", fullAccessOnly: false },
+  { label: "Monthly Reports", icon: BarChart3, path: "/team-portal/monthly-reports", fullAccessOnly: false },
+  { label: "Screenshots", icon: Camera, path: "/team-portal/screenshots", fullAccessOnly: true },
   { label: "Employees", icon: Users, path: "/team-portal/employees", fullAccessOnly: true },
   { label: "Teams", icon: UserPlus, path: "/team-portal/teams", fullAccessOnly: true },
 ];

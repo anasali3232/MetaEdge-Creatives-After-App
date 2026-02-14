@@ -34,6 +34,23 @@ Key optimizations include `React.lazy()` for code splitting, Suspense with loadi
 ### Team Portal System (Hubstaff-like)
 A separate `team-portal` system with its own JWT-based authentication (5-minute inactivity auto-logout) for managing employees, teams, tasks (Kanban board), timesheets, leave requests, and personal notes. Access levels include `full`, `multi_team`, and `team_only`.
 
+#### Employee Monitoring Features
+- **Activity Heartbeats**: Employees send heartbeat pings every 2 minutes to track active status. Admin dashboard shows real-time active/inactive indicators.
+- **Screenshot Capture**: Browser-based screen capture every 10 minutes (requires user permission via Screen Capture API). Screenshots stored in database as base64 JPEG. Admin-only screenshot viewer page.
+- **Inactive Employee Indicator**: Dark red ring around employee avatars when inactive 10+ minutes (based on heartbeat data). Green ring when active.
+- **Weekly Reports**: Employees submit weekly reports (accomplishments, challenges, next week plan) by team. Team members can view their team's reports; admins see all.
+- **Monthly Reports**: Similar to weekly but with monthly summary, achievements, goals for next month, hours/tasks stats.
+- **Performance Graphs**: Weekly activity bar chart with trend comparison vs last week (arrow up/down with percentage).
+
+#### New Database Tables (Feb 2026)
+- `activity_heartbeats` - Employee activity tracking
+- `screenshots` - Captured screen images (base64)
+- `weekly_reports` - Weekly team reports
+- `monthly_reports` - Monthly team reports
+
+#### Deployment Note
+After deploying to production server, run `npx drizzle-kit push` to create the new tables.
+
 ## External Dependencies
 
 - **Database:** MySQL/MariaDB via Drizzle ORM (for blog, admin, and team portal data)

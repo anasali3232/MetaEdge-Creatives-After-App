@@ -18,7 +18,14 @@ import {
   X,
   BarChart3,
   TrendingUp,
+  TrendingDown,
   Activity,
+  FileText,
+  Camera,
+  Monitor,
+  MonitorOff,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +50,7 @@ interface PerformanceData {
   totalTasksDone: number;
   totalTasksAssigned: number;
   tasksTotal: number;
+  lastWeekHours?: number;
 }
 
 interface EmployeePerformance {
@@ -58,12 +66,20 @@ interface EmployeePerformance {
   isOnline: boolean;
 }
 
+interface HeartbeatData {
+  employeeId: string;
+  lastActive: string;
+}
+
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/team-portal/dashboard", fullAccessOnly: false },
   { label: "Tasks", icon: CheckSquare, path: "/team-portal/tasks", fullAccessOnly: false },
   { label: "My Time", icon: Clock, path: "/team-portal/timesheet", fullAccessOnly: false },
   { label: "Leaves", icon: CalendarDays, path: "/team-portal/leaves", fullAccessOnly: false },
   { label: "Notes", icon: StickyNote, path: "/team-portal/notes", fullAccessOnly: false },
+  { label: "Weekly Reports", icon: FileText, path: "/team-portal/weekly-reports", fullAccessOnly: false },
+  { label: "Monthly Reports", icon: BarChart3, path: "/team-portal/monthly-reports", fullAccessOnly: false },
+  { label: "Screenshots", icon: Camera, path: "/team-portal/screenshots", fullAccessOnly: true },
   { label: "Employees", icon: Users, path: "/team-portal/employees", fullAccessOnly: true },
   { label: "Teams", icon: UserPlus, path: "/team-portal/teams", fullAccessOnly: true },
 ];
@@ -120,6 +136,12 @@ export default function TeamPortalDashboard() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [perfData, setPerfData] = useState<PerformanceData | null>(null);
   const [empPerformance, setEmpPerformance] = useState<EmployeePerformance[]>([]);
+  const [screenshotEnabled, setScreenshotEnabled] = useState(false);
+  const [heartbeats, setHeartbeats] = useState<HeartbeatData[]>([]);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const heartbeatsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchDashboard = useCallback(() => {
     if (!token) return;
@@ -153,11 +175,24 @@ export default function TeamPortalDashboard() {
       .catch(() => {});
   }, [token, isFullAccess]);
 
+  const fetchHeartbeats = useCallback(() => {
+    if (!token || !isFullAccess) return;
+    fetch("/api/team-portal/heartbeats", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setHeartbeats(data);
+      })
+      .catch(() => {});
+  }, [token, isFullAccess]);
+
   useEffect(() => {
     fetchDashboard();
     fetchPerformance();
     fetchEmployeePerformance();
-  }, [fetchDashboard, fetchPerformance, fetchEmployeePerformance]);
+    fetchHeartbeats();
+  }, [fetchDashboard, fetchPerformance, fetchEmployeePerformance, fetchHeartbeats]);
 
   useEffect(() => {
     if (intervalRef.current) {
@@ -185,6 +220,111 @@ export default function TeamPortalDashboard() {
     };
   }, [dashData?.clockedIn, dashData?.clockEntry]);
 
+  useEffect(() => {
+    if (!token) return;
+
+    const sendHeartbeat = () => {
+      try {
+        fetch("/api/team-portal/heartbeat", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        }).catch(() => {});
+      } catch {}
+    };
+
+    sendHeartbeat();
+    heartbeatIntervalRef.current = setInterval(sendHeartbeat, 2 * 60 * 1000);
+
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || !screenshotEnabled) {
+      if (screenshotIntervalRef.current) {
+        clearInterval(screenshotIntervalRef.current);
+        screenshotIntervalRef.current = null;
+      }
+      if (!screenshotEnabled && mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      return;
+    }
+
+    const captureAndUpload = async () => {
+      try {
+        let stream = mediaStreamRef.current;
+        if (!stream || !stream.active) {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+          });
+          mediaStreamRef.current = stream;
+        }
+
+        const track = stream.getVideoTracks()[0];
+        if (!track) return;
+
+        const imageCapture = new (window as any).ImageCapture(track);
+        const bitmap = await imageCapture.grabFrame();
+
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(bitmap, 0, 0);
+
+        const base64String = canvas.toDataURL("image/jpeg", 0.7);
+
+        await fetch("/api/team-portal/screenshots", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ imageData: base64String }),
+        }).catch(() => {});
+      } catch {
+      }
+    };
+
+    captureAndUpload();
+    screenshotIntervalRef.current = setInterval(captureAndUpload, 10 * 60 * 1000);
+
+    return () => {
+      if (screenshotIntervalRef.current) {
+        clearInterval(screenshotIntervalRef.current);
+        screenshotIntervalRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, [token, screenshotEnabled]);
+
+  useEffect(() => {
+    if (!token || !isFullAccess) return;
+
+    heartbeatsIntervalRef.current = setInterval(fetchHeartbeats, 30 * 1000);
+
+    return () => {
+      if (heartbeatsIntervalRef.current) {
+        clearInterval(heartbeatsIntervalRef.current);
+        heartbeatsIntervalRef.current = null;
+      }
+    };
+  }, [token, isFullAccess, fetchHeartbeats]);
+
   const handleClock = async (action: "in" | "out") => {
     if (!token) return;
     setClockLoading(true);
@@ -209,6 +349,28 @@ export default function TeamPortalDashboard() {
     setClockLoading(false);
   };
 
+  const getEmployeeActivityStatus = (employeeId: string): "active" | "inactive" | "unknown" => {
+    const hb = heartbeats.find((h) => h.employeeId === employeeId);
+    if (!hb) return "unknown";
+    const lastActive = new Date(hb.lastActive).getTime();
+    const now = Date.now();
+    const diffMinutes = (now - lastActive) / (1000 * 60);
+    return diffMinutes > 10 ? "inactive" : "active";
+  };
+
+  const getTrendData = () => {
+    if (!perfData) return null;
+    const lastWeek = perfData.lastWeekHours ?? 0;
+    const thisWeek = perfData.totalWeekHours;
+    if (lastWeek === 0 && thisWeek === 0) return { direction: "neutral" as const, percentage: 0 };
+    if (lastWeek === 0) return { direction: "up" as const, percentage: 100 };
+    const change = ((thisWeek - lastWeek) / lastWeek) * 100;
+    return {
+      direction: change >= 0 ? ("up" as const) : ("down" as const),
+      percentage: Math.abs(Math.round(change)),
+    };
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -230,6 +392,8 @@ export default function TeamPortalDashboard() {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  const trendData = getTrendData();
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
@@ -283,6 +447,23 @@ export default function TeamPortalDashboard() {
               <h2 className="text-lg font-semibold text-gray-900 hidden md:block">Dashboard</h2>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                data-testid="button-toggle-screenshot"
+                onClick={() => setScreenshotEnabled(!screenshotEnabled)}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                  screenshotEnabled
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : "bg-gray-50 text-gray-500 border border-gray-200"
+                }`}
+                title={screenshotEnabled ? "Screen sharing enabled" : "Enable screen sharing"}
+              >
+                {screenshotEnabled ? (
+                  <Monitor className="w-3.5 h-3.5" />
+                ) : (
+                  <MonitorOff className="w-3.5 h-3.5" />
+                )}
+                <span className="hidden sm:inline">{screenshotEnabled ? "Sharing" : "Share Screen"}</span>
+              </button>
               <span className="text-sm text-gray-600 hidden sm:block">{user.name}</span>
               {user.avatarUrl ? (
                 <img
@@ -542,6 +723,27 @@ export default function TeamPortalDashboard() {
                         <p className="text-2xl font-bold text-gray-900">{perfData.avgDailyHours.toFixed(1)}h</p>
                         <p className="text-xs text-gray-400">Daily avg</p>
                       </div>
+                      {trendData && (
+                        <>
+                          <div className="h-8 w-px bg-gray-200" />
+                          <div className="flex items-center gap-1.5">
+                            {trendData.direction === "up" ? (
+                              <div className="flex items-center gap-1 text-green-600">
+                                <ArrowUp className="w-4 h-4" />
+                                <span className="text-sm font-bold">{trendData.percentage}%</span>
+                              </div>
+                            ) : trendData.direction === "down" ? (
+                              <div className="flex items-center gap-1 text-red-600">
+                                <ArrowDown className="w-4 h-4" />
+                                <span className="text-sm font-bold">{trendData.percentage}%</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm font-bold text-gray-400">—</span>
+                            )}
+                            <span className="text-[10px] text-gray-400">vs last week</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                     <BarChart
                       data={perfData.weeklyHours.map((d) => ({ label: d.label, hours: d.hours }))}
@@ -642,12 +844,33 @@ export default function TeamPortalDashboard() {
                       <tbody>
                         {empPerformance.map((emp) => {
                           const taskPct = emp.tasksTotal > 0 ? Math.round((emp.tasksDone / emp.tasksTotal) * 100) : 0;
+                          const activityStatus = getEmployeeActivityStatus(emp.id);
+                          const empInitials = emp.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()
+                            .slice(0, 2);
+                          const ringColor =
+                            activityStatus === "active"
+                              ? "ring-green-500"
+                              : activityStatus === "inactive"
+                              ? "ring-red-800"
+                              : "ring-gray-300";
                           return (
-                            <tr key={emp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                            <tr key={emp.id} className="border-b border-gray-100 hover:bg-gray-50/50" data-testid={`row-employee-${emp.id}`}>
                               <td className="px-4 py-3">
-                                <div>
-                                  <p className="font-medium text-gray-900">{emp.name}</p>
-                                  <p className="text-xs text-gray-400">{emp.designation}</p>
+                                <div className="flex items-center gap-3">
+                                  <div
+                                    className={`w-8 h-8 rounded-full bg-[#C41E3A] text-white flex items-center justify-center text-xs font-bold ring-2 ${ringColor}`}
+                                    data-testid={`avatar-employee-${emp.id}`}
+                                  >
+                                    {empInitials}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-gray-900">{emp.name}</p>
+                                    <p className="text-xs text-gray-400">{emp.designation}</p>
+                                  </div>
                                 </div>
                               </td>
                               <td className="px-4 py-3">
