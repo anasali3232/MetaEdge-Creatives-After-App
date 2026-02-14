@@ -67,6 +67,9 @@ const TeamPortalTasks = lazy(() => import("@/pages/TeamPortalTasks"));
 const TeamPortalTimesheet = lazy(() => import("@/pages/TeamPortalTimesheet"));
 const TeamPortalLeaves = lazy(() => import("@/pages/TeamPortalLeaves"));
 const TeamPortalNotes = lazy(() => import("@/pages/TeamPortalNotes"));
+const TeamPortalWeeklyReports = lazy(() => import("@/pages/TeamPortalWeeklyReports"));
+const TeamPortalMonthlyReports = lazy(() => import("@/pages/TeamPortalMonthlyReports"));
+const TeamPortalScreenshots = lazy(() => import("@/pages/TeamPortalScreenshots"));
 
 function usePrefetchRoutes() {
   const [location] = useLocation();
@@ -174,6 +177,9 @@ function Router() {
         <Route path="/team-portal/timesheet" component={TeamPortalTimesheet} />
         <Route path="/team-portal/leaves" component={TeamPortalLeaves} />
         <Route path="/team-portal/notes" component={TeamPortalNotes} />
+        <Route path="/team-portal/weekly-reports" component={TeamPortalWeeklyReports} />
+        <Route path="/team-portal/monthly-reports" component={TeamPortalMonthlyReports} />
+        <Route path="/team-portal/screenshots" component={TeamPortalScreenshots} />
         <Route path="/platforms/:slug" component={PlatformPage} />
         <Route path="/contact" component={Contact} />
         <Route component={NotFound} />

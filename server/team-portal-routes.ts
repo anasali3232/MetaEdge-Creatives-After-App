@@ -776,4 +776,257 @@ export function registerTeamPortalRoutes(app: Express) {
       res.status(500).json({ error: "Failed to fetch admin performance data" });
     }
   });
+
+  app.post("/api/team-portal/heartbeat", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const { appName, windowTitle } = req.body;
+      await storage.upsertHeartbeat(req.employeeUser!.employeeId, appName, windowTitle);
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to record heartbeat" });
+    }
+  });
+
+  app.get("/api/team-portal/heartbeats", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      if (!isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+      const heartbeats = await storage.getHeartbeats();
+      res.json(heartbeats);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch heartbeats" });
+    }
+  });
+
+  app.post("/api/team-portal/screenshots", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const { imageData, appName, windowTitle } = req.body;
+      if (!imageData) {
+        return res.status(400).json({ error: "imageData is required" });
+      }
+      const screenshot = await storage.createScreenshot({
+        employeeId: req.employeeUser!.employeeId,
+        imageData,
+        appName,
+        windowTitle,
+      });
+      res.json({ id: screenshot.id, capturedAt: screenshot.capturedAt });
+    } catch {
+      res.status(500).json({ error: "Failed to create screenshot" });
+    }
+  });
+
+  app.get("/api/team-portal/screenshots", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      if (!isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+      const { employeeId, limit } = req.query as any;
+      const screenshots = await storage.getScreenshots(employeeId || undefined, limit ? parseInt(limit, 10) : undefined);
+      res.json(screenshots);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch screenshots" });
+    }
+  });
+
+  app.get("/api/team-portal/screenshots/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      if (!isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+      const screenshot = await storage.getScreenshotById(req.params.id as string);
+      if (!screenshot) {
+        return res.status(404).json({ error: "Screenshot not found" });
+      }
+      res.json(screenshot);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch screenshot" });
+    }
+  });
+
+  app.post("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const { teamId, weekStart, weekEnd, accomplishments, challenges, nextWeekPlan, hoursWorked } = req.body;
+      if (!teamId || !weekStart || !weekEnd || !accomplishments) {
+        return res.status(400).json({ error: "teamId, weekStart, weekEnd, and accomplishments are required" });
+      }
+      const report = await storage.createWeeklyReport({
+        employeeId: req.employeeUser!.employeeId,
+        teamId,
+        weekStart,
+        weekEnd,
+        accomplishments,
+        challenges,
+        nextWeekPlan,
+        hoursWorked,
+      });
+      res.json(report);
+    } catch {
+      res.status(500).json({ error: "Failed to create weekly report" });
+    }
+  });
+
+  app.get("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const { teamId, employeeId } = req.query as any;
+      if (isSuperAdminOrFullAccess(req)) {
+        const reports = await storage.getWeeklyReports(teamId || undefined, employeeId || undefined);
+        return res.json(reports);
+      }
+      const accessTeams = req.employeeUser?.accessTeams || [];
+      if (teamId) {
+        if (!accessTeams.includes(teamId)) {
+          return res.status(403).json({ error: "You don't have access to this team's reports" });
+        }
+        const reports = await storage.getWeeklyReports(teamId, employeeId || undefined);
+        return res.json(reports);
+      }
+      let allReports: any[] = [];
+      for (const tid of accessTeams) {
+        const reports = await storage.getWeeklyReports(tid, employeeId || undefined);
+        allReports = allReports.concat(reports);
+      }
+      res.json(allReports);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch weekly reports" });
+    }
+  });
+
+  app.get("/api/team-portal/weekly-reports/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.getWeeklyReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: "Weekly report not found" });
+      }
+      res.json(report);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch weekly report" });
+    }
+  });
+
+  app.put("/api/team-portal/weekly-reports/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.getWeeklyReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: "Weekly report not found" });
+      }
+      if (report.employeeId !== req.employeeUser!.employeeId && !isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "You can only update your own reports" });
+      }
+      const updated = await storage.updateWeeklyReport(req.params.id as string, req.body);
+      res.json(updated);
+    } catch {
+      res.status(500).json({ error: "Failed to update weekly report" });
+    }
+  });
+
+  app.delete("/api/team-portal/weekly-reports/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.getWeeklyReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: "Weekly report not found" });
+      }
+      if (report.employeeId !== req.employeeUser!.employeeId && !isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "You can only delete your own reports" });
+      }
+      const deleted = await storage.deleteWeeklyReport(req.params.id as string);
+      res.json({ success: deleted });
+    } catch {
+      res.status(500).json({ error: "Failed to delete weekly report" });
+    }
+  });
+
+  app.post("/api/team-portal/monthly-reports", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const { teamId, month, summary, achievements, challenges, goalsNextMonth, totalHours, tasksCompleted } = req.body;
+      if (!teamId || !month || !summary) {
+        return res.status(400).json({ error: "teamId, month, and summary are required" });
+      }
+      const report = await storage.createMonthlyReport({
+        employeeId: req.employeeUser!.employeeId,
+        teamId,
+        month,
+        summary,
+        achievements,
+        challenges,
+        goalsNextMonth,
+        totalHours,
+        tasksCompleted,
+      });
+      res.json(report);
+    } catch {
+      res.status(500).json({ error: "Failed to create monthly report" });
+    }
+  });
+
+  app.get("/api/team-portal/monthly-reports", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const { teamId, employeeId } = req.query as any;
+      if (isSuperAdminOrFullAccess(req)) {
+        const reports = await storage.getMonthlyReports(teamId || undefined, employeeId || undefined);
+        return res.json(reports);
+      }
+      const accessTeams = req.employeeUser?.accessTeams || [];
+      if (teamId) {
+        if (!accessTeams.includes(teamId)) {
+          return res.status(403).json({ error: "You don't have access to this team's reports" });
+        }
+        const reports = await storage.getMonthlyReports(teamId, employeeId || undefined);
+        return res.json(reports);
+      }
+      let allReports: any[] = [];
+      for (const tid of accessTeams) {
+        const reports = await storage.getMonthlyReports(tid, employeeId || undefined);
+        allReports = allReports.concat(reports);
+      }
+      res.json(allReports);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch monthly reports" });
+    }
+  });
+
+  app.get("/api/team-portal/monthly-reports/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.getMonthlyReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: "Monthly report not found" });
+      }
+      res.json(report);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch monthly report" });
+    }
+  });
+
+  app.put("/api/team-portal/monthly-reports/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.getMonthlyReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: "Monthly report not found" });
+      }
+      if (report.employeeId !== req.employeeUser!.employeeId && !isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "You can only update your own reports" });
+      }
+      const updated = await storage.updateMonthlyReport(req.params.id as string, req.body);
+      res.json(updated);
+    } catch {
+      res.status(500).json({ error: "Failed to update monthly report" });
+    }
+  });
+
+  app.delete("/api/team-portal/monthly-reports/:id", employeeAuth, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.getMonthlyReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: "Monthly report not found" });
+      }
+      if (report.employeeId !== req.employeeUser!.employeeId && !isSuperAdminOrFullAccess(req)) {
+        return res.status(403).json({ error: "You can only delete your own reports" });
+      }
+      const deleted = await storage.deleteMonthlyReport(req.params.id as string);
+      res.json({ success: deleted });
+    } catch {
+      res.status(500).json({ error: "Failed to delete monthly report" });
+    }
+  });
 }

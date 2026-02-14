@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type ContactMessage, type InsertContactMessage, type BlogPost, type InsertBlogPost, type Career, type InsertCareer, type SiteSetting, type InsertSiteSetting, type TeamMember, type InsertTeamMember, type AdminUser, type PageMeta, type InsertPageMeta, type NewsletterSubscriber, type InsertNewsletterSubscriber, type Client, type Service, type ClientService, type Ticket, type TicketMessage, type PasswordResetToken, type ChatSession, type ChatMessage, type JobApplication, type InsertJobApplication, type Faq, type InsertFaq, type Employee, type Team, type TeamMembership, type Task, type TaskComment, type ClockEntry, type LeaveRequest, type PersonalNote, users, contactMessages, blogPosts, careers, siteSettings, teamMembers, adminUsers, pageMeta, newsletterSubscribers, clients, services, clientServices, tickets, ticketMessages, passwordResetTokens, chatSessions, chatMessages, jobApplications, faqs, employees, teams, teamMemberships, tasks, taskComments, clockEntries, leaveRequests, personalNotes } from "@shared/schema";
+import { type User, type InsertUser, type ContactMessage, type InsertContactMessage, type BlogPost, type InsertBlogPost, type Career, type InsertCareer, type SiteSetting, type InsertSiteSetting, type TeamMember, type InsertTeamMember, type AdminUser, type PageMeta, type InsertPageMeta, type NewsletterSubscriber, type InsertNewsletterSubscriber, type Client, type Service, type ClientService, type Ticket, type TicketMessage, type PasswordResetToken, type ChatSession, type ChatMessage, type JobApplication, type InsertJobApplication, type Faq, type InsertFaq, type Employee, type Team, type TeamMembership, type Task, type TaskComment, type ClockEntry, type LeaveRequest, type PersonalNote, type ActivityHeartbeat, type Screenshot, type WeeklyReport, type MonthlyReport, users, contactMessages, blogPosts, careers, siteSettings, teamMembers, adminUsers, pageMeta, newsletterSubscribers, clients, services, clientServices, tickets, ticketMessages, passwordResetTokens, chatSessions, chatMessages, jobApplications, faqs, employees, teams, teamMemberships, tasks, taskComments, clockEntries, leaveRequests, personalNotes, activityHeartbeats, screenshots, weeklyReports, monthlyReports } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, gt, gte, lte, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -190,6 +190,27 @@ export interface IStorage {
   getNotes(employeeId: string): Promise<PersonalNote[]>;
   updateNote(id: string, data: Partial<PersonalNote>): Promise<PersonalNote | undefined>;
   deleteNote(id: string): Promise<boolean>;
+
+  upsertHeartbeat(employeeId: string, appName?: string, windowTitle?: string): Promise<ActivityHeartbeat>;
+  getHeartbeats(): Promise<ActivityHeartbeat[]>;
+  getHeartbeat(employeeId: string): Promise<ActivityHeartbeat | undefined>;
+
+  createScreenshot(data: { employeeId: string; imageData: string; appName?: string; windowTitle?: string }): Promise<Screenshot>;
+  getScreenshots(employeeId?: string, limit?: number): Promise<Screenshot[]>;
+  getScreenshotById(id: string): Promise<Screenshot | undefined>;
+  deleteOldScreenshots(daysOld: number): Promise<number>;
+
+  createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number }): Promise<WeeklyReport>;
+  getWeeklyReports(teamId?: string, employeeId?: string): Promise<WeeklyReport[]>;
+  getWeeklyReportById(id: string): Promise<WeeklyReport | undefined>;
+  updateWeeklyReport(id: string, data: any): Promise<WeeklyReport | undefined>;
+  deleteWeeklyReport(id: string): Promise<boolean>;
+
+  createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number }): Promise<MonthlyReport>;
+  getMonthlyReports(teamId?: string, employeeId?: string): Promise<MonthlyReport[]>;
+  getMonthlyReportById(id: string): Promise<MonthlyReport | undefined>;
+  updateMonthlyReport(id: string, data: any): Promise<MonthlyReport | undefined>;
+  deleteMonthlyReport(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1532,6 +1553,191 @@ export class DatabaseStorage implements IStorage {
     const existing = await db.select({ id: personalNotes.id }).from(personalNotes).where(eq(personalNotes.id, id));
     if (existing.length === 0) return false;
     await db.delete(personalNotes).where(eq(personalNotes.id, id));
+    return true;
+  }
+
+  async upsertHeartbeat(employeeId: string, appName?: string, windowTitle?: string): Promise<ActivityHeartbeat> {
+    const [existing] = await db.select().from(activityHeartbeats).where(eq(activityHeartbeats.employeeId, employeeId));
+    if (existing) {
+      const updateData: Record<string, any> = { lastActive: new Date() };
+      if (appName !== undefined) updateData.appName = appName;
+      if (windowTitle !== undefined) updateData.windowTitle = windowTitle;
+      await db.update(activityHeartbeats).set(updateData).where(eq(activityHeartbeats.employeeId, employeeId));
+      const [updated] = await db.select().from(activityHeartbeats).where(eq(activityHeartbeats.employeeId, employeeId));
+      return updated;
+    }
+    const id = randomUUID();
+    await db.insert(activityHeartbeats).values({
+      id,
+      employeeId,
+      lastActive: new Date(),
+      appName: appName ?? null,
+      windowTitle: windowTitle ?? null,
+    });
+    const [created] = await db.select().from(activityHeartbeats).where(eq(activityHeartbeats.id, id));
+    return created;
+  }
+
+  async getHeartbeats(): Promise<ActivityHeartbeat[]> {
+    return db.select().from(activityHeartbeats);
+  }
+
+  async getHeartbeat(employeeId: string): Promise<ActivityHeartbeat | undefined> {
+    const [heartbeat] = await db.select().from(activityHeartbeats).where(eq(activityHeartbeats.employeeId, employeeId));
+    return heartbeat;
+  }
+
+  async createScreenshot(data: { employeeId: string; imageData: string; appName?: string; windowTitle?: string }): Promise<Screenshot> {
+    const id = randomUUID();
+    await db.insert(screenshots).values({
+      id,
+      employeeId: data.employeeId,
+      imageData: data.imageData,
+      appName: data.appName ?? null,
+      windowTitle: data.windowTitle ?? null,
+    });
+    const [created] = await db.select().from(screenshots).where(eq(screenshots.id, id));
+    return created;
+  }
+
+  async getScreenshots(employeeId?: string, limit: number = 50): Promise<Screenshot[]> {
+    if (employeeId) {
+      return db.select().from(screenshots)
+        .where(eq(screenshots.employeeId, employeeId))
+        .orderBy(desc(screenshots.capturedAt))
+        .limit(limit);
+    }
+    return db.select().from(screenshots)
+      .orderBy(desc(screenshots.capturedAt))
+      .limit(limit);
+  }
+
+  async getScreenshotById(id: string): Promise<Screenshot | undefined> {
+    const [s] = await db.select().from(screenshots).where(eq(screenshots.id, id));
+    return s;
+  }
+
+  async deleteOldScreenshots(daysOld: number): Promise<number> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - daysOld);
+    const old = await db.select({ id: screenshots.id }).from(screenshots).where(lte(screenshots.capturedAt, cutoff));
+    if (old.length === 0) return 0;
+    await db.delete(screenshots).where(lte(screenshots.capturedAt, cutoff));
+    return old.length;
+  }
+
+  async createWeeklyReport(data: { employeeId: string; teamId: string; weekStart: string; weekEnd: string; accomplishments: string; challenges?: string; nextWeekPlan?: string; hoursWorked?: number }): Promise<WeeklyReport> {
+    const id = randomUUID();
+    await db.insert(weeklyReports).values({
+      id,
+      employeeId: data.employeeId,
+      teamId: data.teamId,
+      weekStart: data.weekStart,
+      weekEnd: data.weekEnd,
+      accomplishments: data.accomplishments,
+      challenges: data.challenges ?? null,
+      nextWeekPlan: data.nextWeekPlan ?? null,
+      hoursWorked: data.hoursWorked ?? null,
+    });
+    const [created] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
+    return created;
+  }
+
+  async getWeeklyReports(teamId?: string, employeeId?: string): Promise<WeeklyReport[]> {
+    const conditions = [];
+    if (teamId) conditions.push(eq(weeklyReports.teamId, teamId));
+    if (employeeId) conditions.push(eq(weeklyReports.employeeId, employeeId));
+    if (conditions.length > 0) {
+      return db.select().from(weeklyReports)
+        .where(and(...conditions))
+        .orderBy(desc(weeklyReports.createdAt));
+    }
+    return db.select().from(weeklyReports).orderBy(desc(weeklyReports.createdAt));
+  }
+
+  async getWeeklyReportById(id: string): Promise<WeeklyReport | undefined> {
+    const [report] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
+    return report;
+  }
+
+  async updateWeeklyReport(id: string, data: any): Promise<WeeklyReport | undefined> {
+    const [existing] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
+    if (!existing) return undefined;
+    const updateData: Record<string, any> = {};
+    if (data.accomplishments !== undefined) updateData.accomplishments = data.accomplishments;
+    if (data.challenges !== undefined) updateData.challenges = data.challenges;
+    if (data.nextWeekPlan !== undefined) updateData.nextWeekPlan = data.nextWeekPlan;
+    if (data.hoursWorked !== undefined) updateData.hoursWorked = data.hoursWorked;
+    if (data.weekStart !== undefined) updateData.weekStart = data.weekStart;
+    if (data.weekEnd !== undefined) updateData.weekEnd = data.weekEnd;
+    updateData.updatedAt = new Date();
+    await db.update(weeklyReports).set(updateData).where(eq(weeklyReports.id, id));
+    const [updated] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
+    return updated;
+  }
+
+  async deleteWeeklyReport(id: string): Promise<boolean> {
+    const existing = await db.select({ id: weeklyReports.id }).from(weeklyReports).where(eq(weeklyReports.id, id));
+    if (existing.length === 0) return false;
+    await db.delete(weeklyReports).where(eq(weeklyReports.id, id));
+    return true;
+  }
+
+  async createMonthlyReport(data: { employeeId: string; teamId: string; month: string; summary: string; achievements?: string; challenges?: string; goalsNextMonth?: string; totalHours?: number; tasksCompleted?: number }): Promise<MonthlyReport> {
+    const id = randomUUID();
+    await db.insert(monthlyReports).values({
+      id,
+      employeeId: data.employeeId,
+      teamId: data.teamId,
+      month: data.month,
+      summary: data.summary,
+      achievements: data.achievements ?? null,
+      challenges: data.challenges ?? null,
+      goalsNextMonth: data.goalsNextMonth ?? null,
+      totalHours: data.totalHours ?? null,
+      tasksCompleted: data.tasksCompleted ?? null,
+    });
+    const [created] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));
+    return created;
+  }
+
+  async getMonthlyReports(teamId?: string, employeeId?: string): Promise<MonthlyReport[]> {
+    const conditions = [];
+    if (teamId) conditions.push(eq(monthlyReports.teamId, teamId));
+    if (employeeId) conditions.push(eq(monthlyReports.employeeId, employeeId));
+    if (conditions.length > 0) {
+      return db.select().from(monthlyReports)
+        .where(and(...conditions))
+        .orderBy(desc(monthlyReports.createdAt));
+    }
+    return db.select().from(monthlyReports).orderBy(desc(monthlyReports.createdAt));
+  }
+
+  async getMonthlyReportById(id: string): Promise<MonthlyReport | undefined> {
+    const [report] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));
+    return report;
+  }
+
+  async updateMonthlyReport(id: string, data: any): Promise<MonthlyReport | undefined> {
+    const [existing] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));
+    if (!existing) return undefined;
+    const updateData: Record<string, any> = {};
+    if (data.summary !== undefined) updateData.summary = data.summary;
+    if (data.achievements !== undefined) updateData.achievements = data.achievements;
+    if (data.challenges !== undefined) updateData.challenges = data.challenges;
+    if (data.goalsNextMonth !== undefined) updateData.goalsNextMonth = data.goalsNextMonth;
+    if (data.totalHours !== undefined) updateData.totalHours = data.totalHours;
+    if (data.tasksCompleted !== undefined) updateData.tasksCompleted = data.tasksCompleted;
+    updateData.updatedAt = new Date();
+    await db.update(monthlyReports).set(updateData).where(eq(monthlyReports.id, id));
+    const [updated] = await db.select().from(monthlyReports).where(eq(monthlyReports.id, id));
+    return updated;
+  }
+
+  async deleteMonthlyReport(id: string): Promise<boolean> {
+    const existing = await db.select({ id: monthlyReports.id }).from(monthlyReports).where(eq(monthlyReports.id, id));
+    if (existing.length === 0) return false;
+    await db.delete(monthlyReports).where(eq(monthlyReports.id, id));
     return true;
   }
 }
