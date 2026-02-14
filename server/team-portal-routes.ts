@@ -5,6 +5,34 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "./jwt-config";
 import { sendNotificationEmail } from "./resend-email";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+const REPORT_UPLOADS_DIR = path.join(process.cwd(), "uploads", "reports");
+if (!fs.existsSync(REPORT_UPLOADS_DIR)) {
+  fs.mkdirSync(REPORT_UPLOADS_DIR, { recursive: true });
+}
+
+const reportUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, REPORT_UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`;
+      cb(null, uniqueName);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [".pdf", ".zip", ".doc", ".docx"];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF, ZIP, DOC, DOCX files are allowed"));
+    }
+  },
+});
 
 interface EmployeeJwtPayload {
   employeeId: string;
@@ -892,6 +920,28 @@ export function registerTeamPortalRoutes(app: Express) {
     } catch {
       res.status(500).json({ error: "Failed to delete screenshot" });
     }
+  });
+
+  app.post("/api/team-portal/upload-report-file", employeeAuth, reportUpload.single("file"), (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const fileUrl = `/api/team-portal/report-files/${req.file.filename}`;
+      res.json({ fileUrl, fileName: req.file.originalname });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "File upload failed" });
+    }
+  });
+
+  app.get("/api/team-portal/report-files/:filename", employeeAuth, (req: Request, res: Response) => {
+    const filename = path.basename(req.params.filename);
+    const filePath = path.join(REPORT_UPLOADS_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.sendFile(filePath);
   });
 
   app.post("/api/team-portal/weekly-reports", employeeAuth, async (req: Request, res: Response) => {

@@ -48,32 +48,19 @@ interface WeeklyReport {
 }
 
 async function uploadFile(file: File, token: string): Promise<string> {
-  const metaRes = await fetch("/api/uploads/request-url", {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/team-portal/upload-report-file", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      name: file.name,
-      size: file.size,
-      contentType: file.type || "application/octet-stream",
-    }),
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
   });
-  if (!metaRes.ok) {
-    const errData = await metaRes.json().catch(() => ({}));
-    throw new Error(errData.error || "Failed to get upload URL");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "File upload failed");
   }
-  const { uploadURL, objectPath } = await metaRes.json();
-  const uploadRes = await fetch(uploadURL, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-  });
-  if (!uploadRes.ok) {
-    throw new Error("Failed to upload file");
-  }
-  return objectPath;
+  const data = await res.json();
+  return data.fileUrl;
 }
 
 function getWeekLabel(weekStart: string): string {
